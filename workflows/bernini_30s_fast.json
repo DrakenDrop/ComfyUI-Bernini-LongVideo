@@ -637,6 +637,12 @@
           "name": "source_frames",
           "type": "IMAGE",
           "link": 6
+        },
+        {
+          "name": "reference_images",
+          "type": "IMAGE",
+          "shape": 7,
+          "link": null
         }
       ],
       "outputs": [

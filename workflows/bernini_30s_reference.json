@@ -1,6 +1,6 @@
 {
-  "last_node_id": 16,
-  "last_link_id": 18,
+  "last_node_id": 17,
+  "last_link_id": 22,
   "nodes": [
     {
       "id": 1,
@@ -62,7 +62,7 @@
           "pos": null,
           "slot_index": null,
           "links": [
-            7
+            1
           ]
         }
       ],
@@ -139,8 +139,8 @@
           "pos": null,
           "slot_index": null,
           "links": [
-            5,
-            8
+            2,
+            7
           ]
         }
       ],
@@ -153,6 +153,186 @@
       "widgets_values": [
         "wan2.2_bernini_r_low_noise_int8_convrot.safetensors",
         "default"
+      ],
+      "color": "#223",
+      "bgcolor": "#335"
+    },
+    {
+      "id": 3,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        390,
+        30
+      ],
+      "size": [
+        502.43449540962047,
+        82
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": "model",
+          "locked": null,
+          "name": "model",
+          "nameLocked": null,
+          "removable": null,
+          "type": "MODEL",
+          "pos": null,
+          "link": 1
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": "lora_name",
+          "locked": null,
+          "name": "lora_name",
+          "nameLocked": null,
+          "removable": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": "strength_model",
+          "locked": null,
+          "name": "strength_model",
+          "nameLocked": null,
+          "removable": null,
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength_model"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": "model",
+          "locked": null,
+          "name": "MODEL",
+          "nameLocked": null,
+          "removable": null,
+          "type": "MODEL",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            9
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.22.0",
+        "Node name for S&R": "LoraLoaderModelOnly",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "wan2.2_t2v_lightx2v_4steps_lora_v1.1_high_noise.safetensors",
+        1
+      ],
+      "color": "#223",
+      "bgcolor": "#335"
+    },
+    {
+      "id": 4,
+      "type": "LoraLoaderModelOnly",
+      "pos": [
+        390,
+        230
+      ],
+      "size": [
+        499.90272163056034,
+        82
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": "model",
+          "locked": null,
+          "name": "model",
+          "nameLocked": null,
+          "removable": null,
+          "type": "MODEL",
+          "pos": null,
+          "link": 2
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": "lora_name",
+          "locked": null,
+          "name": "lora_name",
+          "nameLocked": null,
+          "removable": null,
+          "type": "COMBO",
+          "widget": {
+            "name": "lora_name"
+          },
+          "link": null
+        },
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": "strength_model",
+          "locked": null,
+          "name": "strength_model",
+          "nameLocked": null,
+          "removable": null,
+          "type": "FLOAT",
+          "widget": {
+            "name": "strength_model"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "color_off": null,
+          "color_on": null,
+          "dir": null,
+          "label": "model",
+          "locked": null,
+          "name": "MODEL",
+          "nameLocked": null,
+          "removable": null,
+          "type": "MODEL",
+          "pos": null,
+          "slot_index": null,
+          "links": [
+            10
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.22.0",
+        "Node name for S&R": "LoraLoaderModelOnly",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "wan2.2_t2v_lightx2v_4steps_lora_v1.1_low_noise.safetensors",
+        1.35
       ],
       "color": "#223",
       "bgcolor": "#335"
@@ -233,8 +413,8 @@
           "pos": null,
           "slot_index": null,
           "links": [
-            1,
-            2
+            3,
+            4
           ]
         }
       ],
@@ -297,7 +477,7 @@
           "pos": null,
           "slot_index": null,
           "links": [
-            11
+            13
           ]
         }
       ],
@@ -371,8 +551,8 @@
           "pos": null,
           "slot_index": null,
           "links": [
-            4,
-            12
+            6,
+            14
           ]
         },
         {
@@ -402,7 +582,7 @@
           "pos": null,
           "slot_index": null,
           "links": [
-            17
+            19
           ]
         },
         {
@@ -450,19 +630,19 @@
         530
       ],
       "flags": {},
-      "order": 7,
+      "order": 9,
       "mode": 0,
       "inputs": [
         {
           "name": "source_frames",
           "type": "IMAGE",
-          "link": 4
+          "link": 6
         },
         {
           "name": "reference_images",
           "type": "IMAGE",
           "shape": 7,
-          "link": null
+          "link": 21
         }
       ],
       "outputs": [
@@ -470,7 +650,7 @@
           "name": "enhanced_prompt",
           "type": "STRING",
           "links": [
-            3
+            5
           ]
         }
       ],
@@ -478,13 +658,13 @@
         "Node name for S&R": "BerniniPromptEnhancerVLLM"
       },
       "widgets_values": [
-        "",
-        false,
+        "Replace the subject's clothing with the garment shown in the reference image. Preserve identity, original motion, camera and background. Change only the clothing.",
+        true,
         "",
         "http://127.0.0.1:8000/v1",
         "auto",
         "VLLM_API_KEY",
-        0,
+        1,
         0.2,
         512,
         90,
@@ -506,7 +686,7 @@
         200
       ],
       "flags": {},
-      "order": 10,
+      "order": 12,
       "mode": 0,
       "inputs": [
         {
@@ -520,7 +700,7 @@
           "removable": null,
           "type": "CLIP",
           "pos": null,
-          "link": 1
+          "link": 3
         },
         {
           "color_off": null,
@@ -535,7 +715,7 @@
           "widget": {
             "name": "text"
           },
-          "link": 3
+          "link": 5
         }
       ],
       "outputs": [
@@ -552,7 +732,7 @@
           "pos": null,
           "slot_index": null,
           "links": [
-            9
+            11
           ]
         }
       ],
@@ -581,7 +761,7 @@
         156.5146484375
       ],
       "flags": {},
-      "order": 8,
+      "order": 10,
       "mode": 0,
       "inputs": [
         {
@@ -595,7 +775,7 @@
           "removable": null,
           "type": "CLIP",
           "pos": null,
-          "link": 2
+          "link": 4
         },
         {
           "color_off": null,
@@ -627,7 +807,7 @@
           "pos": null,
           "slot_index": null,
           "links": [
-            10
+            12
           ]
         }
       ],
@@ -656,7 +836,7 @@
         106
       ],
       "flags": {},
-      "order": 9,
+      "order": 11,
       "mode": 0,
       "inputs": [
         {
@@ -670,7 +850,7 @@
           "removable": null,
           "type": "MODEL",
           "pos": null,
-          "link": 5
+          "link": 7
         },
         {
           "color_off": null,
@@ -732,7 +912,7 @@
           "pos": null,
           "slot_index": null,
           "links": [
-            6
+            8
           ]
         }
       ],
@@ -744,7 +924,7 @@
       },
       "widgets_values": [
         "simple",
-        20,
+        4,
         1
       ]
     },
@@ -760,7 +940,7 @@
         78
       ],
       "flags": {},
-      "order": 11,
+      "order": 13,
       "mode": 0,
       "inputs": [
         {
@@ -774,7 +954,7 @@
           "removable": null,
           "type": "SIGMAS",
           "pos": null,
-          "link": 6
+          "link": 8
         },
         {
           "color_off": null,
@@ -806,7 +986,7 @@
           "pos": null,
           "slot_index": null,
           "links": [
-            14
+            16
           ]
         },
         {
@@ -822,7 +1002,7 @@
           "pos": null,
           "slot_index": null,
           "links": [
-            15
+            17
           ]
         }
       ],
@@ -833,7 +1013,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        10
+        2
       ]
     },
     {
@@ -881,7 +1061,7 @@
           "pos": null,
           "slot_index": null,
           "links": [
-            13
+            15
           ]
         }
       ],
@@ -908,58 +1088,58 @@
         850
       ],
       "flags": {},
-      "order": 12,
+      "order": 14,
       "mode": 0,
       "inputs": [
         {
           "name": "model_high",
           "type": "MODEL",
-          "link": 7
+          "link": 9
         },
         {
           "name": "model_low",
           "type": "MODEL",
-          "link": 8
+          "link": 10
         },
         {
           "name": "positive",
           "type": "CONDITIONING",
-          "link": 9
+          "link": 11
         },
         {
           "name": "negative",
           "type": "CONDITIONING",
-          "link": 10
+          "link": 12
         },
         {
           "name": "vae",
           "type": "VAE",
-          "link": 11
+          "link": 13
         },
         {
           "name": "source_video",
           "type": "IMAGE",
-          "link": 12
+          "link": 14
         },
         {
           "name": "sampler",
           "type": "SAMPLER",
-          "link": 13
+          "link": 15
         },
         {
           "name": "sigmas_high",
           "type": "SIGMAS",
-          "link": 14
+          "link": 16
         },
         {
           "name": "sigmas_low",
           "type": "SIGMAS",
-          "link": 15
+          "link": 17
         },
         {
           "name": "reference_images",
           "type": "IMAGE",
-          "link": null
+          "link": 22
         }
       ],
       "outputs": [
@@ -967,7 +1147,7 @@
           "name": "images",
           "type": "IMAGE",
           "links": [
-            16
+            18
           ]
         },
         {
@@ -984,7 +1164,7 @@
           "name": "fps",
           "type": "FLOAT",
           "links": [
-            18
+            20
           ]
         },
         {
@@ -1006,8 +1186,8 @@
         "crossfade",
         413532359003415,
         "fixed",
-        4,
-        4,
+        1,
+        1,
         true,
         true,
         512,
@@ -1027,19 +1207,19 @@
         334
       ],
       "flags": {},
-      "order": 13,
+      "order": 15,
       "mode": 0,
       "inputs": [
         {
           "name": "images",
           "type": "IMAGE",
-          "link": 16
+          "link": 18
         },
         {
           "name": "audio",
           "shape": 7,
           "type": "AUDIO",
-          "link": 17
+          "link": 19
         },
         {
           "name": "meta_batch",
@@ -1056,7 +1236,7 @@
         {
           "name": "frame_rate",
           "type": "FLOAT",
-          "link": 18,
+          "link": 20,
           "widget": {
             "name": "frame_rate"
           }
@@ -1077,7 +1257,7 @@
       "widgets_values": {
         "frame_rate": 16,
         "loop_count": 0,
-        "filename_prefix": "Bernini_Long_quality",
+        "filename_prefix": "Bernini_Long_fast",
         "format": "video/h264-mp4",
         "pix_fmt": "yuv420p",
         "crf": 19,
@@ -1108,13 +1288,68 @@
         "Node name for S&R": "Note"
       },
       "widgets_values": [
-        "Pilih/upload video >=30 detik. Isi instruksi di Prompt Enhancer. enabled=false tetap meneruskan prompt. Untuk vLLM: nyalakan server lalu enabled=true; sample_frames=4 hanya untuk model vision. Input dan output harus 16 fps. Jika video pendek, hasil juga pendek. Mulai max_seconds=6 untuk memeriksa satu sambungan. Tidak ada jaminan bebas flicker. QUALITY: tanpa LoRA, 20 langkah / split 10, CFG 4 adalah titik awal eksperimen, bukan preset resmi. Tiled VAE aktif; pada 96 GB coba non-tiled untuk benchmark. Pilih resolution=480p/720p pada Long V2V. Rasio input dipertahankan persis; 16:9 pada target480p menjadi864x486. Width/height hanya untuk custom. Loader memakai ukuran asli; perhatikan RAM untuk input resolusi tinggi. Frame output mengikuti 4n+1: 30s/16fps = 481 frame; sumber 480 frame mengulang frame terakhir sekali. Gunakan images + source_images untuk perbandingan dan fps ke Video Combine."
+        "REFERENCE WORKFLOW: Load the saved Qwen Image 2.1 edit into the reference Load Image. Its IMAGE feeds both the prompt enhancer and Bernini. Configure a vision model (local GGUF + matching mmproj or an external server); enhancer is enabled and sends 1 source frame + 1 reference image. Source video must remain the original. Qwen sampling is performed separately; this graph consumes its saved result. Pilih/upload video >=30 detik. Isi instruksi di Prompt Enhancer. enabled=false tetap meneruskan prompt. Untuk vLLM: nyalakan server lalu enabled=true; sample_frames=4 hanya untuk model vision. Input dan output harus 16 fps. Jika video pendek, hasil juga pendek. Mulai max_seconds=6 untuk memeriksa satu sambungan. Tidak ada jaminan bebas flicker. FAST: INT8 dan LightX2V 4 langkah dari workflow awal; efektivitas LoRA pada Bernini perlu diuji. Tiled VAE aktif; pada 96 GB coba non-tiled untuk benchmark. Pilih resolution=480p/720p pada Long V2V. Rasio input dipertahankan persis; 16:9 pada target480p menjadi864x486. Width/height hanya untuk custom. Loader memakai ukuran asli; perhatikan RAM untuk input resolusi tinggi. Frame output mengikuti 4n+1: 30s/16fps = 481 frame; sumber 480 frame mengulang frame terakhir sekali. Gunakan images + source_images untuk perbandingan dan fps ke Video Combine."
+      ]
+    },
+    {
+      "id": 17,
+      "type": "LoadImage",
+      "title": "Reference: saved Qwen Image 2.1 result",
+      "pos": [
+        750,
+        1050
+      ],
+      "size": [
+        340,
+        300
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            21,
+            22
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "upload_qwen_reference.png",
+        "image"
       ]
     }
   ],
   "links": [
     [
       1,
+      1,
+      0,
+      3,
+      0,
+      "MODEL"
+    ],
+    [
+      2,
+      2,
+      0,
+      4,
+      0,
+      "MODEL"
+    ],
+    [
+      3,
       5,
       0,
       9,
@@ -1122,7 +1357,7 @@
       "CLIP"
     ],
     [
-      2,
+      4,
       5,
       0,
       10,
@@ -1130,7 +1365,7 @@
       "CLIP"
     ],
     [
-      3,
+      5,
       8,
       0,
       9,
@@ -1138,7 +1373,7 @@
       "STRING"
     ],
     [
-      4,
+      6,
       7,
       0,
       8,
@@ -1146,7 +1381,7 @@
       "IMAGE"
     ],
     [
-      5,
+      7,
       2,
       0,
       11,
@@ -1154,7 +1389,7 @@
       "MODEL"
     ],
     [
-      6,
+      8,
       11,
       0,
       12,
@@ -1162,23 +1397,23 @@
       "SIGMAS"
     ],
     [
-      7,
-      1,
-      0,
-      14,
-      0,
-      "MODEL"
-    ],
-    [
-      8,
-      2,
-      0,
-      14,
-      1,
-      "MODEL"
-    ],
-    [
       9,
+      3,
+      0,
+      14,
+      0,
+      "MODEL"
+    ],
+    [
+      10,
+      4,
+      0,
+      14,
+      1,
+      "MODEL"
+    ],
+    [
+      11,
       9,
       0,
       14,
@@ -1186,7 +1421,7 @@
       "CONDITIONING"
     ],
     [
-      10,
+      12,
       10,
       0,
       14,
@@ -1194,7 +1429,7 @@
       "CONDITIONING"
     ],
     [
-      11,
+      13,
       6,
       0,
       14,
@@ -1202,7 +1437,7 @@
       "VAE"
     ],
     [
-      12,
+      14,
       7,
       0,
       14,
@@ -1210,7 +1445,7 @@
       "IMAGE"
     ],
     [
-      13,
+      15,
       13,
       0,
       14,
@@ -1218,7 +1453,7 @@
       "SAMPLER"
     ],
     [
-      14,
+      16,
       12,
       0,
       14,
@@ -1226,7 +1461,7 @@
       "SIGMAS"
     ],
     [
-      15,
+      17,
       12,
       1,
       14,
@@ -1234,7 +1469,7 @@
       "SIGMAS"
     ],
     [
-      16,
+      18,
       14,
       0,
       15,
@@ -1242,7 +1477,7 @@
       "IMAGE"
     ],
     [
-      17,
+      19,
       7,
       2,
       15,
@@ -1250,12 +1485,28 @@
       "AUDIO"
     ],
     [
-      18,
+      20,
       14,
       3,
       15,
       4,
       "FLOAT"
+    ],
+    [
+      21,
+      17,
+      0,
+      8,
+      1,
+      "IMAGE"
+    ],
+    [
+      22,
+      17,
+      0,
+      14,
+      9,
+      "IMAGE"
     ]
   ],
   "groups": [],
