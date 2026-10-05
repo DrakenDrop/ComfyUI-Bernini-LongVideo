@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from core import plan_windows, render_timeline, target_frames
+from core import plan_windows, render_timeline, target_frames, input_frame_rate, source_frame_indices
 
 
 class TimelineTests(unittest.TestCase):
@@ -59,6 +59,47 @@ class TimelineTests(unittest.TestCase):
             total = target_frames(available, 16, 0)
             self.assertEqual((total - 1) % 4, 0)
             self.assertTrue(0 <= total - available <= 3)
+
+    def test_fps_conversion_keeps_motion_timestamps(self):
+        for source_fps in (8, 23.976, 30, 60):
+            available = round(source_fps * 10)
+            indices, valid, padding = source_frame_indices(available, source_fps, 16, 10)
+            self.assertEqual(len(indices), 161)
+            self.assertEqual(indices[16], round(source_fps))
+            self.assertEqual(indices[80], round(source_fps * 5))
+            source_time = indices[:valid] / source_fps
+            target_time = np.arange(valid) / 16
+            self.assertLessEqual(np.max(np.abs(source_time - target_time)), 1 / source_fps + 1e-9)
+            self.assertTrue(0 <= padding <= 3)
+            np.testing.assert_array_equal(indices[valid:], np.repeat(indices[valid - 1], padding))
+
+    def test_duration_cap_applies_after_resampling(self):
+        indices, valid, padding = source_frame_indices(1800, 60, 16, 5)
+        self.assertEqual(len(indices), 81)
+        self.assertEqual(indices[-1], 300)
+        self.assertEqual((valid, padding), (81, 0))
+
+    def test_short_native_source_does_not_expand_to_requested_duration(self):
+        indices, valid, padding = source_frame_indices(120, 30, 16, 10)
+        self.assertEqual((len(indices), valid, padding), (65, 64, 1))
+        self.assertEqual(indices[16], 30)
+
+    def test_metadata_uses_loaded_fps_and_overrides_manual(self):
+        self.assertEqual(input_frame_rate({'source_fps': 60, 'loaded_fps': 16}, 30, 16),
+                         (16, 'video_info.loaded_fps'))
+        self.assertEqual(input_frame_rate(None, 30, 16), (30, 'input_fps'))
+        self.assertEqual(input_frame_rate(None, 0, 16), (16, 'assumed_from_output_fps'))
+        indices, _, _ = source_frame_indices(81, 16, 16, 5)
+        np.testing.assert_array_equal(indices, np.arange(81))
+
+    def test_invalid_rate_metadata_is_not_silently_assumed(self):
+        for info in ({'source_fps': 30}, {'loaded_fps': 0}, {'loaded_fps': 'bad'},
+                     {'loaded_fps': float('nan')}, []):
+            with self.assertRaises(ValueError): input_frame_rate(info, 30, 16)
+        for rate in (-1, float('inf'), 'bad'):
+            with self.assertRaises(ValueError): input_frame_rate(None, rate, 16)
+        for args in ((10, 0, 16, 5), (10, 30, float('nan'), 5), (0, 30, 16, 5)):
+            with self.assertRaises(ValueError): source_frame_indices(*args)
 
     def test_invalid_windows_and_renderer(self):
         for args in [(0,81,17),(10,80,17),(10,81,81),(10,81,-1)]:

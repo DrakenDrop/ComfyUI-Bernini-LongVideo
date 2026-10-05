@@ -37,11 +37,13 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(nodes[7]['widgets_values']['custom_height'],0)
             self.assertEqual(nodes[15]['widgets_values']['frame_rate'],16)
             self.assertEqual(sampler['widgets_values'][2:6],[16,30,81,17])
-            self.assertEqual(sampler['widgets_values'][-1],'480p')
+            self.assertEqual(sampler['widgets_values'][-2:],['480p',0])
             self.assertEqual([(o['name'], o['type']) for o in sampler['outputs']],
                              [('images', 'IMAGE'), ('report', 'STRING'), ('frame_count', 'INT'), ('fps', 'FLOAT'), ('source_images', 'IMAGE')])
             fps_link = next(i['link'] for i in nodes[15]['inputs'] if i['name'] == 'frame_rate')
             self.assertEqual(links[fps_link][1:3], [14, 3])
+            info_link = next(i['link'] for i in sampler['inputs'] if i['name'] == 'video_info')
+            self.assertEqual(links[info_link][1:3], [7, 3])
             self.assertFalse(any(n['type']=='ImageFromBatch' for n in nodes.values()))
             if path.name == 'bernini_30s_reference.json':
                 enhancer_ref = next(i['link'] for i in nodes[8]['inputs'] if i['name'] == 'reference_images')

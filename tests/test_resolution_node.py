@@ -48,7 +48,24 @@ class ResolutionNodeTests(unittest.TestCase):
     def test_single_frame_is_not_extended_to_requested_duration(self):
         self.check_node(1, 16, 30, 81, 17, 1, 1)
 
-    def check_node(self, available, fps, seconds, chunk, overlap, expected, expected_chunks):
+    def test_native_30fps_source_is_resampled_before_conditioning(self):
+        expected_indices = np.minimum(np.floor(np.minimum(np.arange(161), 159) * 30 / 16 + .5), 299).astype(int)
+        self.check_node(300, 16, 10, 81, 17, 161, 3,
+                        video_info={'loaded_fps': 30, 'source_fps': 30},
+                        expected_indices=expected_indices, expected_tail=1, expected_input_fps=30)
+
+    def test_loader_force_rate_is_not_applied_twice(self):
+        self.check_node(81, 16, 5, 81, 17, 81, 1,
+                        video_info={'loaded_fps': 16, 'source_fps': 60}, input_fps=60)
+
+    def test_manual_input_fps_preserves_a_full_five_seconds(self):
+        self.check_node(600, 16, 5, 81, 17, 81, 1, input_fps=60,
+                        expected_indices=np.floor(np.arange(81) * 60 / 16 + .5).astype(int),
+                        expected_tail=0, expected_input_fps=60)
+
+    def check_node(self, available, fps, seconds, chunk, overlap, expected, expected_chunks,
+                   video_info=None, input_fps=0, expected_indices=None, expected_tail=None,
+                   expected_input_fps=None):
         source = np.random.default_rng(12).random((available, 13, 21, 3), dtype=np.float32)
         calls = []
 
@@ -90,8 +107,10 @@ class ResolutionNodeTests(unittest.TestCase):
                 sigmas_low=np.array([.5, 0.]), width=480, height=832, fps=fps, max_seconds=seconds,
                 chunk_frames=chunk, overlap=overlap, blend_mode='crossfade', seed=1, seed_mode='fixed',
                 cfg_high=1, cfg_low=1, tiled_encode=False, tiled_decode=False, tile_size=512,
-                ref_max_size=512, resolution='source')
-        expected_source = source[np.minimum(np.arange(expected), available - 1)]
+                ref_max_size=512, resolution='source', video_info=video_info, input_fps=input_fps)
+        if expected_indices is None:
+            expected_indices = np.minimum(np.arange(expected), available - 1)
+        expected_source = source[expected_indices]
         np.testing.assert_allclose(output.numpy(), expected_source, atol=1e-7)
         np.testing.assert_array_equal(comparison.numpy(), expected_source)
         self.assertEqual(len(calls), expected_chunks)
@@ -109,8 +128,10 @@ class ResolutionNodeTests(unittest.TestCase):
         self.assertEqual(report['max_seconds'], seconds)
         self.assertEqual(report['seconds'], expected / fps)
         self.assertEqual(report['frame_span_seconds'], (expected - 1) / fps)
-        self.assertEqual(report['source_frames_used'], min(available, expected))
-        self.assertEqual(report['tail_padding_frames'], max(0, expected - available))
+        self.assertEqual(report['source_frames_used'], int(expected_indices[-1]) + 1)
+        self.assertEqual(report['tail_padding_frames'], max(0, expected - available) if expected_tail is None else expected_tail)
+        self.assertEqual(report['input_fps'], fps if expected_input_fps is None else expected_input_fps)
+        self.assertEqual(report['timing_warning'] is None, video_info is not None or input_fps > 0)
         self.assertEqual(report['output_size'], [21, 13])
         self.assertEqual(report['model_canvas'], [32, 16])
 
