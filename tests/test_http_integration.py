@@ -3,6 +3,7 @@ import json
 import sys
 import threading
 import unittest
+import numpy as np
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -39,13 +40,19 @@ class HTTPIntegrationTests(unittest.TestCase):
             thread.start()
             try:
                 result = enhance('Baju biru', '', f'http://127.0.0.1:{server.server_port}',
-                                 'auto', '', 0.2, 512, 5)
+                                 'auto', '', 0.2, 512, 5,
+                                 frames=np.zeros((1, 8, 8, 3), dtype=np.float32), sample_frames=1,
+                                 reference_images=np.ones((1, 8, 8, 3), dtype=np.float32))
             finally:
                 server.shutdown()
                 thread.join(timeout=5)
         self.assertEqual(result, 'Make the shirt blue.')
         self.assertEqual([(r[0], r[1]) for r in requests], [('GET', '/v1/models'), ('POST', '/v1/chat/completions')])
         self.assertEqual(requests[1][2]['model'], 'local-fixture')
+        content = requests[1][2]['messages'][1]['content']
+        self.assertEqual(sum(p['type'] == 'image_url' for p in content), 2)
+        self.assertIn('SOURCE FRAMES', content[1]['text'])
+        self.assertIn('REFERENCE IMAGE', content[3]['text'])
 
 
 if __name__ == '__main__': unittest.main()

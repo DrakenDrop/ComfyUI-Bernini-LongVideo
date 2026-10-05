@@ -43,6 +43,13 @@ class WorkflowTests(unittest.TestCase):
             fps_link = next(i['link'] for i in nodes[15]['inputs'] if i['name'] == 'frame_rate')
             self.assertEqual(links[fps_link][1:3], [14, 3])
             self.assertFalse(any(n['type']=='ImageFromBatch' for n in nodes.values()))
+            if path.name == 'bernini_30s_reference.json':
+                enhancer_ref = next(i['link'] for i in nodes[8]['inputs'] if i['name'] == 'reference_images')
+                render_ref = next(i['link'] for i in sampler['inputs'] if i['name'] == 'reference_images')
+                self.assertEqual(links[enhancer_ref][1:3], links[render_ref][1:3])
+                self.assertEqual(nodes[links[enhancer_ref][1]]['type'], 'LoadImage')
+                self.assertTrue(nodes[8]['widgets_values'][1])
+                self.assertEqual(nodes[8]['widgets_values'][6], 1)
 
     def test_custom_widget_layout_matches_python_schema(self):
         # Only introspect schemas; torch is unavailable in this CPU test environment.

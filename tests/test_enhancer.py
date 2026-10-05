@@ -1,4 +1,5 @@
 import io
+import base64
 import json
 import os
 import sys
@@ -8,6 +9,7 @@ from unittest.mock import patch, MagicMock
 from urllib.error import HTTPError, URLError
 
 import numpy as np
+from PIL import Image
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from enhancer import enhance, endpoint, image_parts
@@ -56,7 +58,31 @@ class EnhancerTests(unittest.TestCase):
         opener.return_value.open.return_value=self.response({'choices':[{'message':{'content':'Blue shirt.'}}]})
         self.call(frames=np.zeros((5,20,30,3),dtype=np.float32),sample_frames=4)
         body=json.loads(opener.return_value.open.call_args.args[0].data)
-        self.assertEqual(len(body['messages'][1]['content']),5)
+        content = body['messages'][1]['content']
+        self.assertEqual(len([p for p in content if p['type'] == 'image_url']), 4)
+        self.assertIn('SOURCE FRAMES', content[1]['text'])
+
+    @patch('enhancer.build_opener')
+    def test_source_and_reference_have_distinct_roles_and_pixels(self, opener):
+        opener.return_value.open.return_value=self.response({'choices':[{'message':{'content':'Match the reference shirt.'}}]})
+        self.call(frames=np.zeros((5,20,30,3),dtype=np.float32), sample_frames=1,
+                  reference_images=np.ones((3,20,30,3),dtype=np.float32))
+        content=json.loads(opener.return_value.open.call_args.args[0].data)['messages'][1]['content']
+        self.assertEqual([p['type'] for p in content], ['text','text','image_url','text','image_url'])
+        self.assertIn('SOURCE FRAMES',content[1]['text'])
+        self.assertIn('REFERENCE IMAGE',content[3]['text'])
+        def pixels(part):
+            return np.asarray(Image.open(io.BytesIO(base64.b64decode(part['image_url']['url'].split(',')[1]))))
+        self.assertLess(pixels(content[2]).mean(), 1)
+        self.assertGreater(pixels(content[4]).mean(), 254)
+
+    @patch('enhancer.build_opener')
+    def test_reference_only_is_vision_even_with_zero_source_samples(self, opener):
+        opener.return_value.open.return_value=self.response({'choices':[{'message':{'content':'Use the reference shirt.'}}]})
+        self.call(sample_frames=0, reference_images=np.ones((1,20,30,3),dtype=np.float32))
+        content=json.loads(opener.return_value.open.call_args.args[0].data)['messages'][1]['content']
+        self.assertEqual(len(content),3)
+        self.assertIn('REFERENCE IMAGE',content[1]['text'])
 
     @patch('enhancer.build_opener')
     def test_empty_truncated_and_malformed_rejected(self,opener):
