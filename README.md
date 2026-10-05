@@ -7,6 +7,7 @@ Custom nodes ComfyUI untuk mengedit video panjang dengan **Bernini-R** melalui p
 - Pemrosesan video per potongan dengan panjang dan overlap yang dapat diatur.
 - Penyambungan frame menggunakan crossfade atau cut.
 - Sampling high-noise dan low-noise melalui dukungan Bernini native ComfyUI.
+- Preset resolusi 360p/480p/720p/1080p dengan resize dan rasio input persis.
 - Opsi tiled VAE untuk mengatur penggunaan memori.
 - Prompt enhancer berbasis teks atau cuplikan gambar melalui server vLLM atau llama.cpp lokal.
 - Auto-detect GGUF dari `models/LLM`, dropdown model dan `mmproj`, serta deteksi served model melalui `/v1/models`.
@@ -48,11 +49,32 @@ Pilih nama file yang sesuai jika letak model Anda berbeda. Nama dan bobot model 
 - Long V2V: `fps=16`, `max_seconds=30`, `chunk_frames=81`, `overlap=17`.
 - Video Combine: `frame_rate=16`, audio sumber tersambung.
 - Parameter fps pada node Long V2V menghitung durasi; **tidak meresample input**. Bila mengubah fps, ubah loader dan saver juga.
-- Output default 480×832 portrait. Conditioning native memakai center crop; ubah width/height sesuai rasio sumber jika komposisi harus utuh. Loader mengecilkan lebar menjadi 480 sambil mempertahankan rasio, sehingga tidak memuat 480 frame resolusi asli yang besar. Untuk output lebih besar, naikkan custom_width loader juga agar sumber tidak terlanjur kehilangan detail.
+- Output default memakai `resolution=480p`. Node menghitung ukuran dari rasio video input, melakukan resize per window, dan memakai padding sementara untuk memenuhi kelipatan 16. Padding dibuang setelah decode. Loader contoh memakai `custom_width=0`, `custom_height=0`, `format=None` agar rasio asli tidak berubah sebelum masuk ke node.
 
 Mulai dengan `max_seconds=6`: ini menguji dua window dan satu sambungan. Setelah hasil benar, naikkan kembali menjadi 30. Sumber masih dimuat hingga batas loader; turunkan frame_load_cap juga jika ingin uji pendek lebih hemat RAM.
 
 `crossfade` membaurkan frame yang waktunya sama pada overlap. `cut` memilih bagian awal dari window lama dan bagian akhir dari window baru. Keduanya mempertahankan jumlah frame, tetapi **bukan temporal attention bersama**, bukan optical flow, dan bukan penguncian latent. Crossfade bisa menimbulkan ghosting; cut bisa menampilkan lompatan detail. Seed sama tidak menjamin noise global yang selaras. Tidak ada automatic scene-cut detection; untuk video dengan pergantian shot, proses tiap shot terpisah. Referensi gambar opsional dikirim sebagai referensi native yang sama pada setiap window; efeknya bergantung pada prompt dan model.
+
+## Resolusi dan rasio video
+
+Pilih `resolution` pada **Bernini · Long V2V**: `360p`, `480p`, `720p`, `1080p`, `source`, atau `custom`. Preset p menargetkan **sisi pendek** sehingga cocok untuk landscape, portrait, dan square. `width`/`height` hanya dipakai pada mode `custom`; pada preset p keduanya diabaikan.
+
+Ukuran output mempertahankan rasio input **secara persis**, dengan dimensi piksel genap untuk encoder video umum. Karena jumlah piksel harus bulat, sisi pendek dipilih sedekat mungkin ke target p:
+
+| Rasio input | Target 480p | Target 720p |
+|---|---|---|
+| 16:9 | 864 × 486 | 1280 × 720 |
+| 9:16 | 486 × 864 | 720 × 1280 |
+| 4:3 | 640 × 480 | 960 × 720 |
+| 1:1 | 480 × 480 | 720 × 720 |
+
+480p bukan selalu tepat 480 piksel: 16:9 pada tinggi 480 memerlukan lebar 853⅓ piksel, sehingga tidak bisa sekaligus memiliki dimensi bulat dan rasio persis. Node memilih 864×486. Pada rasio tidak lazim (misalnya 853:480), ukuran genap yang mempertahankan rasio persis bisa jauh dari target (1706×960). Node melaporkan ukuran aktual pada output `report`; dimensi canvas dibatasi 8192 px.
+
+Frame di-resize menggunakan Lanczos float, lalu sisi luarnya dipad dengan piksel tepi ke kelipatan 16 untuk model. Setelah decode, hanya padding yang dibuang. Tidak ada crop pada isi gambar atau stretch rasio. Misalnya output 864×486 memakai canvas internal 864×496. Ini menjaga geometri input/output; hasil edit generatif tetap bergantung pada model.
+
+`source` mempertahankan ukuran input, termasuk dimensi ganjil jika ada; beberapa encoder video memerlukan dimensi genap. `custom` mempertahankan perilaku lama: ukuran manual kelipatan 16 dengan center crop native. Workflow API lama yang tidak mengirim `resolution` tetap memakai mode custom. Untuk workflow UI lama, pilih preset yang diinginkan setelah update.
+
+Agar rasio dihitung dari sumber asli, hindari crop/stretch/resize yang membulatkan rasio pada node sebelum Long V2V. Contoh workflow kini memuat resolusi sumber asli; kebutuhan RAM loader dapat meningkat, walaupun resize untuk Bernini dilakukan per window. Sebagai gambaran, 480 frame 1920×1080 RGB float32 membutuhkan sekitar 11.1 GiB hanya untuk input. Output 720p juga memakai lebih banyak memori daripada 480p.
 
 ## Dua workflow
 
@@ -80,7 +102,7 @@ Pada GPU dengan VRAM yang mencukupi, uji `tiled_encode=false` dan `tiled_decode=
 
 INT8 menghemat penyimpanan bobot, tetapi tidak otomatis lebih cepat pada semua kernel. SageAttention dan torch.compile tidak dipaksakan karena manfaat serta kompatibilitas bergantung pada PyTorch/CUDA dan GPU. Node dapat menerima MODEL yang sudah dipatch lewat workflow jika Anda telah menguji patch tersebut. Jangan mengasumsikan LoRA Wan percepatan mempertahankan seluruh kemampuan editing Bernini.
 
-Memori RAM sistem tetap penting: output float32 480×480×832×3 sendiri sekitar **2.14 GiB**, ditambah input, temporary buffer, model offload dan encoder video. Ini bukan streaming disk; pemuatan input dan penyimpanan hasil tetap berbentuk batch IMAGE. Ukuran VRAM puncak dan durasi render belum diukur.
+Memori RAM sistem tetap penting: output 480 frame float32 pada 864×486×3 sendiri sekitar **2.25 GiB**, ditambah input, temporary buffer, model offload dan encoder video. Ini bukan streaming disk; pemuatan input dan penyimpanan hasil tetap berbentuk batch IMAGE. Ukuran VRAM puncak dan durasi render belum diukur.
 
 ## Prompt enhancer: auto-detect model lokal
 
@@ -142,6 +164,6 @@ Jalankan pada Python yang memiliki NumPy/Pillow:
 python -m unittest discover -s tests -v
 ```
 
-Tes CPU mencakup timeline, overlap, padding, discovery model, pemilihan projector, kepemilikan proses server, respons enhancer, dan struktur workflow. Lihat `validation.json` untuk hasil terakhir; pengujian proses llama-server memakai mock.
+Tes CPU mencakup timeline, overlap, padding temporal/spasial, resize dan rasio persis, discovery model, pemilihan projector, kepemilikan proses server, respons enhancer, dan struktur workflow. Lihat `validation.json` untuk hasil terakhir; pengujian proses llama-server memakai mock.
 
 Validasi render GPU, inferensi model llama.cpp/vLLM nyata, dan benchmark performa belum dilakukan. Mulai dengan klip pendek untuk memeriksa hasil dan sambungan sebelum memproses video penuh.

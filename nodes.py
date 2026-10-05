@@ -8,6 +8,7 @@ from .core import target_frames, render_timeline, plan_windows
 from .enhancer import enhance
 from .local_models import load_config, choices, resolve, SERVER_DEFAULT, MMPROJ_AUTO, MMPROJ_NONE
 from .managed_server import local_server
+from .resolution import RESOLUTIONS, output_geometry, prepare_frames, remove_padding
 
 log = logging.getLogger(__name__)
 
@@ -95,8 +96,8 @@ class BerniniLongV2V:
             "positive": ("CONDITIONING",), "negative": ("CONDITIONING",),
             "vae": ("VAE",), "source_video": ("IMAGE",),
             "sampler": ("SAMPLER",), "sigmas_high": ("SIGMAS",), "sigmas_low": ("SIGMAS",),
-            "width": ("INT", {"default": 480, "min": 16, "max": 8192, "step": 16}),
-            "height": ("INT", {"default": 832, "min": 16, "max": 8192, "step": 16}),
+            "width": ("INT", {"default": 480, "min": 16, "max": 8192, "step": 16, "tooltip": "Only used when resolution=custom."}),
+            "height": ("INT", {"default": 832, "min": 16, "max": 8192, "step": 16, "tooltip": "Only used when resolution=custom."}),
             "fps": ("FLOAT", {"default": 16, "min": 1, "max": 120}),
             "max_seconds": ("FLOAT", {"default": 30, "min": 0, "max": 3600}),
             "chunk_frames": ("INT", {"default": 81, "min": 5, "max": 513, "step": 4}),
@@ -110,7 +111,9 @@ class BerniniLongV2V:
             "tiled_decode": ("BOOLEAN", {"default": True}),
             "tile_size": ("INT", {"default": 512, "min": 128, "max": 2048, "step": 64}),
             "ref_max_size": ("INT", {"default": 512, "min": 16, "max": 8192, "step": 16}),
-        }, "optional": {"reference_images": ("IMAGE",)}}
+        }, "optional": {"reference_images": ("IMAGE",),
+            "resolution": (RESOLUTIONS, {"default": "480p", "tooltip": "Target short edge; uses the nearest even dimensions with the EXACT input ratio. 16:9: 480p = 864x486, 720p = 1280x720. Padding is removed after rendering. custom keeps the legacy width/height behavior."}),
+        }}
 
     RETURN_TYPES = ("IMAGE", "STRING")
     RETURN_NAMES = ("images", "report")
@@ -121,7 +124,7 @@ class BerniniLongV2V:
     def run(self, model_high, model_low, positive, negative, vae, source_video, sampler,
             sigmas_high, sigmas_low, width, height, fps, max_seconds, chunk_frames,
             overlap, blend_mode, seed, seed_mode, cfg_high, cfg_low, tiled_encode,
-            tiled_decode, tile_size, ref_max_size, reference_images=None):
+            tiled_decode, tile_size, ref_max_size, reference_images=None, resolution="custom"):
         # Imports here keep the standalone prompt enhancer usable without Bernini core support.
         try:
             from comfy_extras.nodes_bernini import BerniniConditioning
@@ -132,8 +135,8 @@ class BerniniLongV2V:
         import comfy.model_management as mm
         import comfy.utils
 
-        if width % 16 or height % 16:
-            raise ValueError("width dan height harus kelipatan 16.")
+        geometry = output_geometry(int(source_video.shape[2]), int(source_video.shape[1]), resolution, width, height)
+        width, height = geometry.model_width, geometry.model_height
         total = target_frames(len(source_video), fps, max_seconds)
         windows = plan_windows(total, chunk_frames, overlap)
         if len(sigmas_high) < 2 or len(sigmas_low) < 2:
@@ -147,11 +150,14 @@ class BerniniLongV2V:
 
         def render(clip, index):
             mm.throw_exception_if_processing_interrupted()
+            if resolution != "custom":
+                clip = prepare_frames(clip, geometry, mm.throw_exception_if_processing_interrupted)
             chunk_seed = (seed + (index if seed_mode == "increment" else 0)) % (1 << 64)
             log.info("Bernini Long V2V: chunk %d/%d, %d frames", index + 1, len(windows), len(clip))
             conditioned = BerniniConditioning.execute(
                 positive, negative, encoder, width, height, len(clip), 1,
                 source_video=torch.from_numpy(clip), reference_images=refs, ref_max_size=ref_max_size)
+            del clip
             pos, neg, latent = conditioned[0], conditioned[1], conditioned[2]
             high_result = SamplerCustom().sample(model_high, True, chunk_seed, cfg_high,
                                                  pos, neg, sampler, sigmas_high, latent)
@@ -166,11 +172,19 @@ class BerniniLongV2V:
                 images = VAEDecodeTiled().decode(vae, low, tile_size, 64, 64, 8)[0]
             else:
                 images = VAEDecode().decode(vae, low)[0]
-            return images.detach().cpu().numpy()
+            decoded = images.detach().cpu().numpy()
+            return remove_padding(decoded, geometry) if resolution != "custom" else decoded
 
         output, windows = render_timeline(source, total, chunk_frames, overlap, blend_mode, render,
                                          lambda done, count: progress.update_absolute(done, count))
         report = {"frames": total, "fps": fps, "seconds": total / fps, "chunks": len(windows),
+                  "resolution": resolution,
+                  "input_size": [int(source_video.shape[2]), int(source_video.shape[1])],
+                  "output_size": [geometry.width, geometry.height],
+                  "model_canvas": [width, height],
+                  "padding_removed": {"left": geometry.left, "top": geometry.top,
+                                      "right": width - geometry.width - geometry.left,
+                                      "bottom": height - geometry.height - geometry.top},
                   "windows": [{"start": w.start, "end_exclusive": w.end, "sampled_frames": w.padded} for w in windows],
                   "blend": blend_mode, "output_ram_gib": output.nbytes / 1024 ** 3,
                   "note": "Independent sampling windows + pixel overlap. No latent continuity lock; inspect seams and identity drift."}
