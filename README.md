@@ -41,11 +41,11 @@ Pilih nama file yang sesuai jika letak model Anda berbeda. Nama dan bobot model 
 
 ## Cara kerja 30 detik
 
-30 × 16 = **480 frame output**. Window default 81 frame, overlap 17, stride 64 menghasilkan delapan proses sampling berurutan. Window terakhir berisi 32 frame asli dan dipad menjadi 33; padding dibuang saat penyambungan. Window model mengikuti pola 4n+1, sedangkan file video akhir boleh tepat 480 frame.
+30 × 16 + 1 = **481 frame output**, mengikuti hitungan yang menyertakan frame awal dan akhir serta pola 4n+1. Window default 81 frame, overlap 17, stride 64 menghasilkan delapan proses sampling berurutan. Window terakhir berisi 33 frame. Overlap disatukan, bukan dihitung dua kali. Pada 16 FPS, rentang frame pertama sampai terakhir adalah 30 detik; durasi file 481 frame adalah 30,0625 detik.
 
 81 merupakan default pada conditioning native, bukan hard cap API. Kode native menerima panjang yang lebih besar; itu tidak membuktikan kualitas atau memori tetap aman untuk 481 frame sekaligus. Pendekatan di sini membatasi context model per window. Ini adalah V2V: **dibutuhkan video sumber sepanjang 30 detik** untuk menghasilkan 30 detik. Input pendek tetap menghasilkan video pendek; node tidak menciptakan kelanjutan gerakan di luar sumber.
 
-- Video loader: `force_rate=16`, `frame_load_cap=480`, `select_every_nth=1`, `format=None`.
+- Video loader: `force_rate=16`, `frame_load_cap=481`, `select_every_nth=1`, `format=None`.
 - Long V2V: `fps=16`, `max_seconds=30`, `chunk_frames=81`, `overlap=17`.
 - Video Combine: `frame_rate=16`, audio sumber tersambung.
 - Parameter fps pada node Long V2V menghitung durasi; **tidak meresample input**. Bila mengubah fps, ubah loader dan saver juga.
@@ -57,16 +57,20 @@ Mulai dengan `max_seconds=6`: ini menguji dua window dan satu sambungan. Setelah
 
 ## Frame count, FPS, dan video pembanding
 
-Output **Bernini · Long V2V**: `images`, `report`, `frame_count` (INT), dan `fps` (FLOAT). Dua output lama tetap pada posisi yang sama. `frame_count` adalah jumlah frame hasil sesudah padding dibuang dan overlap disatukan. `fps` meneruskan nilai input node, bukan mendeteksi FPS dari tensor IMAGE atau melakukan resampling.
+Output **Bernini · Long V2V**: `images`, `report`, `frame_count` (INT), `fps` (FLOAT), dan `source_images` (IMAGE). Posisi output lama tetap sama. `frame_count` sama dengan jumlah frame pada `images` dan `source_images`. `fps` meneruskan nilai input node, bukan mendeteksi FPS dari tensor IMAGE atau melakukan resampling.
 
-Jumlah output = `min(frame input yang masuk, max(1, floor(fps × max_seconds + 0.5)))`. Jika `max_seconds=0`, seluruh frame input diproses. Pada 16 FPS: 5 detik = 80 frame, 10 detik = 160 frame, 30 detik = 480 frame, asalkan input cukup panjang. `chunk_frames=81` membatasi panjang window model, bukan durasi video akhir. Input 80 frame dipad sementara menjadi 81 untuk model, lalu kembali menjadi 80 frame output. Overlap tidak mengurangi jumlah frame akhir.
+Target durasi = `1 + 4 × ceil(fps × max_seconds / 4)`. Pada 16 FPS: **5 detik = 81 frame, 10 detik = 161 frame, 30 detik = 481 frame**. Untuk nilai lain, target dibulatkan ke atas ke pola 4n+1 terdekat. Durasi file adalah `frame_count / fps`, sedangkan rentang waktu frame pertama sampai terakhir adalah `(frame_count - 1) / fps`. Contohnya 81 frame pada 16 FPS memiliki rentang 5 detik dan durasi file 5,0625 detik.
 
-Untuk mencari penyebab video terlalu pendek, lihat `input_frames`, `max_seconds`, `frames`, dan `fps` pada `report`. Periksa juga batas frame loader, `select_every_nth`, skip frame, node pemotong batch, dan durasi sumber. FPS Long V2V harus sama dengan FPS frame yang dimuat loader.
+Sumber dipotong hingga target tersebut. Jika sumber lebih pendek, node hanya mengulang frame terakhir sebanyak 0–3 frame untuk mencapai 4n+1 terdekat; tidak memperpanjangnya sampai seluruh durasi yang diminta. Input 80 frame menjadi 81 dan frame tambahan tetap disertakan dalam hasil. `max_seconds=0` memakai seluruh sumber dengan penyelarasan akhir yang sama. `source_images` berisi sumber RGB yang dipotong/ditambah frame akhir identik, pada resolusi sumber, untuk pembanding.
+
+`chunk_frames=81` tetap membatasi panjang tiap window. Padding tambahan di dalam window (misalnya karena overlap tidak sejajar grid temporal) hanya untuk pemrosesan window itu dan tetap dibuang saat penyambungan. Frame akhir yang menyelaraskan timeline utama dipertahankan; overlap tidak dihitung dua kali.
+
+Untuk memeriksa hasil, lihat `input_frames`, `source_frames_used`, `tail_padding_frames`, `frames`, `fps`, `seconds` (durasi file), dan `frame_span_seconds` pada `report`. Periksa juga batas frame loader, `select_every_nth`, skip frame, node pemotong batch, dan durasi sumber. FPS Long V2V harus sama dengan FPS frame yang dimuat loader.
 
 Untuk perbandingan menggunakan Image Concatenate:
 
-1. Cabangkan batch sumber yang **sama dengan input `source_video`** ke node **ImageFromBatch**. Gunakan `batch_index=0`, lalu ubah widget `length` menjadi input dan sambungkan `frame_count` dari Long V2V. Jangan menghubungkannya kembali ke loader yang memasok Long V2V karena membuat siklus graph.
-2. Hubungkan hasil ImageFromBatch dan `images` hasil Bernini ke Image Concatenate. Aktifkan `match_image_size=true` jika tersedia untuk menyamakan ukuran tampilannya.
+1. Hubungkan `images` dan `source_images` dari Long V2V ke dua input Image Concatenate. Keduanya memiliki jumlah frame dan urutan waktu yang sama. Jangan memakai ImageFromBatch pada sumber mentah untuk menambah frame: node pemotong itu tidak membuat frame yang kurang.
+2. Aktifkan `match_image_size=true` jika tersedia untuk menyamakan ukuran tampilan, karena `source_images` mempertahankan resolusi sumber.
 3. Hubungkan `fps` Long V2V ke input `frame_rate` Video Combine pembanding dan Video Combine hasil edit. Ubah widget menjadi input jika belum ada soketnya.
 
 Update paket, restart ComfyUI, lalu refresh halaman. Jika node lama belum menampilkan output baru, tambahkan ulang **Bernini · Long V2V** dan sambungkan kembali. Contoh workflow sudah menghubungkan output FPS ke Video Combine.

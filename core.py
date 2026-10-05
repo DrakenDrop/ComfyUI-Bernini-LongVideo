@@ -31,13 +31,22 @@ def plan_windows(total, chunk_frames=81, overlap=17):
 
 
 def target_frames(available, fps, seconds):
+    """Include the endpoint and round up to Wan's 4n+1 frame grid.
+
+    Short sources need at most three repeated tail frames, not an extension to
+    the requested duration. The caller must retain this tail in the output.
+    """
     if not math.isfinite(fps) or fps <= 0 or not math.isfinite(seconds) or seconds < 0:
         raise ValueError("fps harus positif; seconds harus >= 0 (0 = seluruh input).")
     if available < 1:
         raise ValueError("Video input kosong.")
-    if seconds == 0:
-        return available
-    return min(available, max(1, math.floor(fps * seconds + 0.5)))
+    count = available
+    if seconds > 0:
+        intervals = fps * seconds
+        if not math.isfinite(intervals):
+            raise ValueError("fps * seconds harus finite.")
+        count = min(count, 1 + 4 * math.ceil(intervals / 4))
+    return 1 + 4 * ((count - 1 + 3) // 4)
 
 
 def render_timeline(source, total, chunk_frames, overlap, blend_mode, render, progress=None):

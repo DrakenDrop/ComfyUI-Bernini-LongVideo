@@ -99,7 +99,7 @@ class BerniniLongV2V:
             "width": ("INT", {"default": 480, "min": 16, "max": 8192, "step": 16, "tooltip": "Only used when resolution=custom."}),
             "height": ("INT", {"default": 832, "min": 16, "max": 8192, "step": 16, "tooltip": "Only used when resolution=custom."}),
             "fps": ("FLOAT", {"default": 16, "min": 1, "max": 120}),
-            "max_seconds": ("FLOAT", {"default": 30, "min": 0, "max": 3600}),
+            "max_seconds": ("FLOAT", {"default": 30, "min": 0, "max": 3600, "tooltip": "Endpoint-inclusive duration, rounded up to 4n+1 frames: 5s at 16fps = 81 frames. 0 = all input. Short inputs repeat at most 3 final frames to align."}),
             "chunk_frames": ("INT", {"default": 81, "min": 5, "max": 513, "step": 4}),
             "overlap": ("INT", {"default": 17, "min": 0, "max": 512}),
             "blend_mode": (["crossfade", "cut"],),
@@ -115,11 +115,11 @@ class BerniniLongV2V:
             "resolution": (RESOLUTIONS, {"default": "480p", "tooltip": "Target short edge; uses the nearest even dimensions with the EXACT input ratio. 16:9: 480p = 864x486, 720p = 1280x720. Padding is removed after rendering. custom keeps the legacy width/height behavior."}),
         }}
 
-    RETURN_TYPES = ("IMAGE", "STRING", "INT", "FLOAT")
-    RETURN_NAMES = ("images", "report", "frame_count", "fps")
+    RETURN_TYPES = ("IMAGE", "STRING", "INT", "FLOAT", "IMAGE")
+    RETURN_NAMES = ("images", "report", "frame_count", "fps", "source_images")
     FUNCTION = "run"
     CATEGORY = "Bernini/Long Video"
-    DESCRIPTION = "Sequential native Bernini V2V windows. frame_count is the actual output length; fps passes through the input rate without resampling. Use them to trim comparison frames and set Video Combine frame_rate. Set the loader to the same fps."
+    DESCRIPTION = "Sequential native Bernini V2V windows with endpoint-inclusive 4n+1 output. frame_count matches images and source_images. source_images provides the trimmed/tail-padded source at its original resolution for comparison. fps passes through without resampling; set the loader to the same fps."
 
     def run(self, model_high, model_low, positive, negative, vae, source_video, sampler,
             sigmas_high, sigmas_low, width, height, fps, max_seconds, chunk_frames,
@@ -144,6 +144,10 @@ class BerniniLongV2V:
         if not torch.isclose(sigmas_high[-1], sigmas_low[0]).item() or sigmas_low[-1].item() != 0:
             raise ValueError("Sigma high/low harus bersambung dan tahap low harus berakhir di 0. Gunakan SplitSigmas.")
         source = source_video[:total, :, :, :3].detach().cpu().numpy()
+        source_frames_used = len(source)
+        tail_padding = total - source_frames_used
+        if tail_padding:
+            source = np.concatenate((source, np.repeat(source[-1:], tail_padding, axis=0)))
         refs = {"reference_image_0": reference_images} if reference_images is not None else None
         encoder = TiledEncodeVAE(vae, tile_size) if tiled_encode else vae
         progress = comfy.utils.ProgressBar(len(windows))
@@ -180,6 +184,8 @@ class BerniniLongV2V:
         frame_count = len(output)
         report = {"frames": frame_count, "fps": float(fps), "seconds": frame_count / fps, "chunks": len(windows),
                   "input_frames": len(source_video), "max_seconds": max_seconds,
+                  "source_frames_used": source_frames_used, "tail_padding_frames": tail_padding,
+                  "frame_span_seconds": (frame_count - 1) / fps,
                   "resolution": resolution,
                   "input_size": [int(source_video.shape[2]), int(source_video.shape[1])],
                   "output_size": [geometry.width, geometry.height],
@@ -190,7 +196,8 @@ class BerniniLongV2V:
                   "windows": [{"start": w.start, "end_exclusive": w.end, "sampled_frames": w.padded} for w in windows],
                   "blend": blend_mode, "output_ram_gib": output.nbytes / 1024 ** 3,
                   "note": "Independent sampling windows + pixel overlap. No latent continuity lock; inspect seams and identity drift."}
-        return (torch.from_numpy(output), json.dumps(report, indent=2), frame_count, float(fps))
+        return (torch.from_numpy(output), json.dumps(report, indent=2), frame_count, float(fps),
+                torch.from_numpy(source))
 
 
 NODE_CLASS_MAPPINGS = {"BerniniLongV2V": BerniniLongV2V,

@@ -1,12 +1,12 @@
 {
   "date": "2026-10-05",
-  "cpu_unit_tests": 53,
+  "cpu_unit_tests": 57,
   "result": "passed",
   "upstream_api_signature_checks": "passed",
   "comfyui_source_commit": "5c460d8172fe30761ff67c0df3d5643bb74e0d70",
   "tested": [
     "Timeline assembly and overlap with synthetic frames",
-    "Frame counts and padding; actual node frame_count/fps outputs for short sources, duration caps, multiple windows, and fractional FPS using CPU inference doubles",
+    "Endpoint-inclusive 4n+1 output, at most three retained source tail repeats, aligned comparison source, and matching count/FPS metadata using CPU inference doubles",
     "HTTP request/response handling with mocks",
     "Workflow link integrity and custom widget schemas",
     "Python compilation",
