@@ -139,12 +139,33 @@ class BerniniLongV2V:
             overlap, blend_mode, seed, seed_mode, cfg_high, cfg_low, tiled_encode,
             tiled_decode, tile_size, ref_max_size, reference_images=None, resolution="custom",
             video_info=None, input_fps=0):
+        if len(sigmas_high) < 2 or len(sigmas_low) < 2:
+            raise ValueError("Masing-masing tahap high/low harus memiliki minimal satu langkah sampling.")
+        if not torch.isclose(sigmas_high[-1], sigmas_low[0]).item() or sigmas_low[-1].item() != 0:
+            raise ValueError("Sigma high/low harus bersambung dan tahap low harus berakhir di 0. Gunakan SplitSigmas.")
+        from comfy_extras.nodes_custom_sampler import SamplerCustom
+
+        def sample_window(pos, neg, latent, chunk_seed):
+            high = SamplerCustom().sample(model_high, True, chunk_seed, cfg_high,
+                                          pos, neg, sampler, sigmas_high, latent)[0]
+            return SamplerCustom().sample(model_low, False, chunk_seed, cfg_low,
+                                          pos, neg, sampler, sigmas_low, high)[0]
+
+        return self._render_video(
+            sample_window, "high_low", positive, negative, vae, source_video,
+            width, height, fps, max_seconds, chunk_frames, overlap, blend_mode,
+            seed, seed_mode, tiled_encode, tiled_decode, tile_size, ref_max_size,
+            reference_images, resolution, video_info, input_fps)
+
+    def _render_video(self, sample_window, sampling_mode, positive, negative, vae, source_video,
+                      width, height, fps, max_seconds, chunk_frames, overlap, blend_mode,
+                      seed, seed_mode, tiled_encode, tiled_decode, tile_size, ref_max_size,
+                      reference_images, resolution, video_info, input_fps):
         # Imports here keep the standalone prompt enhancer usable without Bernini core support.
         try:
             from comfy_extras.nodes_bernini import BerniniConditioning
         except ImportError:
             raise RuntimeError("Update ComfyUI ke versi yang memiliki comfy_extras/nodes_bernini.py.") from None
-        from comfy_extras.nodes_custom_sampler import SamplerCustom
         from nodes import VAEDecode, VAEDecodeTiled
         import comfy.model_management as mm
         import comfy.utils
@@ -157,10 +178,6 @@ class BerniniLongV2V:
         if fps_origin == 'assumed_from_output_fps':
             log.warning("Bernini: FPS input tidak diketahui; diasumsikan %s. Hubungkan video_info atau isi input_fps untuk mencegah perubahan kecepatan.", fps)
         windows = plan_windows(total, chunk_frames, overlap)
-        if len(sigmas_high) < 2 or len(sigmas_low) < 2:
-            raise ValueError("Masing-masing tahap high/low harus memiliki minimal satu langkah sampling.")
-        if not torch.isclose(sigmas_high[-1], sigmas_low[0]).item() or sigmas_low[-1].item() != 0:
-            raise ValueError("Sigma high/low harus bersambung dan tahap low harus berakhir di 0. Gunakan SplitSigmas.")
         source_frames_used = int(indices[-1]) + 1
         source = source_video[:source_frames_used, :, :, :3].detach().cpu().numpy()
         if loaded_fps == fps:
@@ -183,19 +200,13 @@ class BerniniLongV2V:
                 source_video=torch.from_numpy(clip), reference_images=refs, ref_max_size=ref_max_size)
             del clip
             pos, neg, latent = conditioned[0], conditioned[1], conditioned[2]
-            high_result = SamplerCustom().sample(model_high, True, chunk_seed, cfg_high,
-                                                 pos, neg, sampler, sigmas_high, latent)
-            high = high_result[0]
-            del high_result, latent
-            low_result = SamplerCustom().sample(model_low, False, chunk_seed, cfg_low,
-                                                pos, neg, sampler, sigmas_low, high)
-            low = low_result[0]
-            del low_result, high, pos, neg, conditioned
+            sampled = sample_window(pos, neg, latent, chunk_seed)
+            del latent, pos, neg, conditioned
             mm.throw_exception_if_processing_interrupted()
             if tiled_decode:
-                images = VAEDecodeTiled().decode(vae, low, tile_size, 64, 64, 8)[0]
+                images = VAEDecodeTiled().decode(vae, sampled, tile_size, 64, 64, 8)[0]
             else:
-                images = VAEDecode().decode(vae, low)[0]
+                images = VAEDecode().decode(vae, sampled)[0]
             decoded = images.detach().cpu().numpy()
             return remove_padding(decoded, geometry) if resolution != "custom" else decoded
 
@@ -203,6 +214,7 @@ class BerniniLongV2V:
                                          lambda done, count: progress.update_absolute(done, count))
         frame_count = len(output)
         report = {"frames": frame_count, "fps": float(fps), "seconds": frame_count / fps, "chunks": len(windows),
+                  "sampling_mode": sampling_mode,
                   "input_frames": len(source_video), "max_seconds": max_seconds,
                   "input_fps": loaded_fps, "input_fps_origin": fps_origin,
                   "input_duration_seconds": len(source_video) / loaded_fps,
@@ -225,7 +237,59 @@ class BerniniLongV2V:
                 torch.from_numpy(source))
 
 
+class BerniniLongV2V13B(BerniniLongV2V):
+    """Single-model sampling for the native Comfy-Org Wan2.1 Bernini 1.3B weights."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        schema = super().INPUT_TYPES()
+        required = {}
+        for name, spec in schema["required"].items():
+            if name in ("model_low", "sigmas_low", "cfg_low"):
+                continue
+            if name == "model_high":
+                name, spec = "model", ("MODEL",)
+            elif name == "sigmas_high":
+                name, spec = "sigmas", ("SIGMAS",)
+            elif name == "cfg_high":
+                name, spec = "cfg", ("FLOAT", {"default": 4.0, "min": 0, "max": 30,
+                    "tooltip": "Standard ComfyUI CFG, not official Bernini multi-branch APG. Start at 4 and compare on a short clip."})
+            required[name] = spec
+        return {"required": required, "optional": schema["optional"]}
+
+    DESCRIPTION = "Wan2.1 Bernini 1.3B: one MODEL, one complete SIGMAS schedule, one CFG. Uses native Bernini conditioning and one sampling call per chunk. Connect video_info for correct source timing."
+
+    def run(self, model, positive, negative, vae, source_video, sampler, sigmas,
+            width, height, fps, max_seconds, chunk_frames, overlap, blend_mode,
+            seed, seed_mode, cfg, tiled_encode, tiled_decode, tile_size, ref_max_size,
+            reference_images=None, resolution="480p", video_info=None, input_fps=0):
+        # Check architecture without rejecting patched MODEL objects or relying on filenames.
+        config = getattr(getattr(getattr(model, "model", None), "model_config", None), "unet_config", {})
+        if (config.get("image_model") != "wan2.1" or config.get("model_type") != "t2v"
+                or config.get("dim") != 1536 or config.get("in_dim") != 16
+                or config.get("out_dim") != 16):
+            raise ValueError("Node 1.3B membutuhkan MODEL Wan2.1 T2V 1.3B native. Pilih wan2.1_bernini_1.3B_fp16.safetensors; untuk Bernini 14B gunakan node Long V2V high/low.")
+        values = sigmas.detach().float().cpu().numpy()
+        if (values.ndim != 1 or len(values) < 2 or not np.isfinite(values).all()
+                or values[0] <= 0 or values[-1] != 0 or np.any(values < 0)
+                or np.any(np.diff(values) > 0)):
+            raise ValueError("Sigmas harus satu jadwal lengkap, finite, menurun dari nilai positif sampai 0. Hubungkan BasicScheduler langsung; jangan gunakan SplitSigmas.")
+        from comfy_extras.nodes_custom_sampler import SamplerCustom
+
+        def sample_window(pos, neg, latent, chunk_seed):
+            return SamplerCustom().sample(model, True, chunk_seed, cfg,
+                                          pos, neg, sampler, sigmas, latent)[0]
+
+        return self._render_video(
+            sample_window, "single_model_1.3b", positive, negative, vae, source_video,
+            width, height, fps, max_seconds, chunk_frames, overlap, blend_mode,
+            seed, seed_mode, tiled_encode, tiled_decode, tile_size, ref_max_size,
+            reference_images, resolution, video_info, input_fps)
+
+
 NODE_CLASS_MAPPINGS = {"BerniniLongV2V": BerniniLongV2V,
+                       "BerniniLongV2V13B": BerniniLongV2V13B,
                        "BerniniPromptEnhancerVLLM": BerniniPromptEnhancerVLLM}
 NODE_DISPLAY_NAME_MAPPINGS = {"BerniniLongV2V": "Bernini · Long V2V",
+                              "BerniniLongV2V13B": "Bernini · Long V2V 1.3B",
                               "BerniniPromptEnhancerVLLM": "Bernini · Prompt Enhancer (Auto Model)"}

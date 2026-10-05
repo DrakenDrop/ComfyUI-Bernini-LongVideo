@@ -7,6 +7,7 @@ Custom nodes ComfyUI untuk mengedit video panjang dengan **Bernini-R** melalui p
 - Pemrosesan video per potongan dengan panjang dan overlap yang dapat diatur.
 - Penyambungan frame menggunakan crossfade atau cut.
 - Sampling high-noise dan low-noise melalui dukungan Bernini native ComfyUI.
+- Node **Bernini · Long V2V 1.3B** dengan satu model dan satu jadwal sampling penuh.
 - Preset resolusi 360p/480p/720p/1080p dengan resize dan rasio input persis.
 - Opsi tiled VAE untuk mengatur penggunaan memori.
 - Prompt enhancer berbasis teks atau cuplikan gambar melalui server vLLM atau llama.cpp lokal.
@@ -111,16 +112,41 @@ Frame di-resize menggunakan Lanczos float, lalu sisi luarnya dipad dengan piksel
 
 Agar rasio dihitung dari sumber asli, hindari crop/stretch/resize yang membulatkan rasio pada node sebelum Long V2V. Contoh workflow kini memuat resolusi sumber asli; kebutuhan RAM loader dapat meningkat, walaupun resize untuk Bernini dilakukan per window. Sebagai gambaran, 480 frame 1920×1080 RGB float32 membutuhkan sekitar 11.1 GiB hanya untuk input. Output 720p juga memakai lebih banyak memori daripada 480p.
 
-## Dua workflow
+## Workflow
 
 | Workflow | Pengaturan awal | Tujuan |
 |---|---|---|
 | `bernini_30s_fast.json` | INT8, LightX2V 4 langkah, split 2/2, CFG 1, LoRA strength 1 / 1.35 | Preset sampling dengan LoRA percepatan |
 | `bernini_30s_quality.json` | INT8, tanpa LightX2V, 20 langkah, split 10/10, CFG 4 | Pembanding untuk mengevaluasi efek LoRA percepatan |
+| `bernini_1_3b_30s_reference.json` | Bernini 1.3B FP16, UniPC, 40 langkah, shift 3, CFG 4 | Satu model, video sumber dan gambar referensi |
 
 Preset quality adalah titik awal eksperimen, **bukan preset resmi atau jaminan lebih bagus**. Periksa split high/low, CFG, sampler, dan jumlah langkah terhadap hasil edit Anda. Contoh workflow membagi langkah high/low sebesar 50/50; pembagian ini dapat disesuaikan dan tidak menggunakan pemilihan expert otomatis berdasarkan threshold. Untuk pembanding kuantisasi, ganti kedua model ke FP16 resmi lalu ukur kualitas, VRAM, dan waktu pada klip pendek yang sama.
 
 Contoh repo menggunakan negative prompt generik; sesuaikan dengan kebutuhan edit Anda. Input negatif memakai conditioning terpisah. Pada CFG 1, prompt negatif biasanya tidak dipakai dalam perhitungan guidance.
+
+## Bernini 1.3B: satu model
+
+Gunakan **Bernini · Long V2V 1.3B** (`BerniniLongV2V13B`) dengan [workflow 1.3B](workflows/bernini_1_3b_30s_reference.json). Node tersedia dalam paket yang sama; restart ComfyUI dan refresh halaman setelah update. Node 14B tetap tersedia dengan input high/low seperti sebelumnya.
+
+- Simpan [wan2.1_bernini_1.3B_fp16.safetensors](https://huggingface.co/Comfy-Org/Bernini-R/blob/main/diffusion_models/wan2.1_bernini_1.3B_fp16.safetensors) di `ComfyUI/models/diffusion_models/`.
+- Gunakan UMT5 dengan `CLIPLoader` type `wan`, serta `wan_2.1_vae.safetensors`, seperti pada workflow 14B.
+- Alur model: **Load Diffusion Model → ModelSamplingSD3 (shift 3.0) → input model Bernini dan BasicScheduler**. Scheduler harus menerima model yang sudah diberi shift yang sama.
+- Hubungkan `BasicScheduler` langsung ke `sigmas`; tidak ada `SplitSigmas`, model low, atau LoRA 14B. `KSamplerSelect` memakai `uni_pc`.
+- Node memanggil sampler sekali per chunk, memakai seluruh jadwal sigma hingga 0 dan menambah noise sekali. CFG adalah CFG standar ComfyUI. Video sumber dan reference image masuk melalui `BerniniConditioning` native pada setiap chunk.
+- Resolusi, chunk/overlap, reference image, tiled VAE, metadata FPS, dan kelima output identik dengan node 14B. Sambungkan `video_info` dari loader sumber dan output `fps` ke Video Combine.
+- Contoh menyediakan Load Image untuk hasil Qwen Image Edit atau gambar pakaian lain. Prompter menerima gambar yang sama, tetapi dinonaktifkan pada awalnya agar workflow dapat digunakan tanpa server LLM; aktifkan setelah model vision disiapkan.
+
+Mulai pengujian dengan `max_seconds=5`, 480p, 81 frame per chunk. Workflow disiapkan untuk 30 detik jika sumber cukup panjang. Untuk satu chunk 10 detik, gunakan `max_seconds=10`, `chunk_frames=161`, `overlap=0`; kebutuhan VRAM dan kualitas perlu diuji. Model 1.3B ini bukan model turbo; preset 4 langkah 14B tidak otomatis cocok.
+
+### Acuan dan perbedaan adaptasi
+
+Workflow satu model yang diperiksa adalah [neuregex/Bernini-1.3B-ComfyUI — bernini_i2i_1.3B.json](https://huggingface.co/neuregex/Bernini-1.3B-ComfyUI/blob/main/workflows/bernini_i2i_1.3B.json). Itu adalah workflow **image editing** dengan loader/source stream/guider pihak lain, Euler dan 20 langkah; tidak disalin sebagai workflow V2V native dan tidak menjadi dependensi paket ini.
+
+Adaptasi video di sini memakai checkpoint **Comfy-Org**, conditioning native, dan sampling standar. Satu transformer, shift **3.0**, dan UniPC mengacu pada [konfigurasi resmi 1.3B](https://github.com/bytedance/Bernini/blob/main/configs/bernini_renderer_wan21_1p3b/config.json). **40 langkah** mengacu pada default [CLI resmi](https://github.com/bytedance/Bernini/blob/main/bernini/cli.py); CLI tersebut juga memiliki override `flow_shift=5`, sehingga preset shift 3 ini mengikuti file konfigurasi, bukan klaim meniru semua default CLI. **CFG 4** adalah titik awal pengujian kita, bukan pengganti ekuivalen guidance multi-cabang/APG pada implementasi resmi atau guider neuregex.
+
+Header safetensors Comfy-Org diperiksa: hidden dimension 1536, input/output latent 16 channel, patch 1×2×2. Node menolak arsitektur yang berbeda sebelum encoding. Arsitektur yang cocok tidak membuktikan bobotnya Bernini: pilih checkpoint Bernini di atas, bukan Wan T2V biasa atau Wan Turbo.
+
+Validasi mencakup tes CPU dengan pengganti inference dan pemeriksaan graph workflow. Render GPU 1.3B, kesetaraan kualitas dengan workflow acuan, dan benchmark kecepatan/VRAM belum diuji.
 
 ## Pengaturan memori dan performa
 
