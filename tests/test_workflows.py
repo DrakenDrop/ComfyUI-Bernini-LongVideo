@@ -33,8 +33,11 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(nodes[7]['widgets_values']['force_rate'],16)
             self.assertEqual(nodes[7]['widgets_values']['frame_load_cap'],480)
             self.assertEqual(nodes[7]['widgets_values']['format'],'None')
+            self.assertEqual(nodes[7]['widgets_values']['custom_width'],0)
+            self.assertEqual(nodes[7]['widgets_values']['custom_height'],0)
             self.assertEqual(nodes[15]['widgets_values']['frame_rate'],16)
             self.assertEqual(sampler['widgets_values'][2:6],[16,30,81,17])
+            self.assertEqual(sampler['widgets_values'][-1],'480p')
             self.assertFalse(any(n['type']=='ImageFromBatch' for n in nodes.values()))
 
     def test_custom_widget_layout_matches_python_schema(self):
