@@ -1,4 +1,5 @@
 import sys
+import socket
 import tempfile
 import unittest
 from pathlib import Path
@@ -71,10 +72,11 @@ class ManagedServerTests(unittest.TestCase):
     def setUp(self):
         server._process = None
         server._signature = None
+        server._port = None
         self.addCleanup(server.stop_owned)
 
     @patch('managed_server.executable', return_value='llama-server')
-    @patch('managed_server.socket.socket')
+    @patch('managed_server.choose_port', return_value=8091)
     @patch('managed_server.subprocess.Popen')
     @patch('managed_server.build_opener')
     def test_owned_launch_arguments_reuse_and_unload(self, opener, popen, sock, exe):
@@ -95,13 +97,42 @@ class ManagedServerTests(unittest.TestCase):
         self.assertIsNone(server._process)
 
     @patch('managed_server.executable', return_value='llama-server')
-    @patch('managed_server.socket.socket')
+    @patch('managed_server.choose_port', return_value=53211)
     @patch('managed_server.subprocess.Popen')
-    def test_occupied_port_does_not_launch_or_kill(self, popen, sock, exe):
-        sock.return_value.__enter__.return_value.bind.side_effect = OSError('occupied')
-        with self.assertRaisesRegex(RuntimeError, 'sudah dipakai'):
-            with server.local_server('a.gguf', None, 8192, {}): pass
-        popen.assert_not_called()
+    @patch('managed_server.build_opener')
+    def test_fallback_port_is_used_for_launch_health_and_reuse(self, opener, popen, choose, exe):
+        popen.return_value.poll.return_value = None
+        opener.return_value.open.return_value.__enter__.return_value.status = 200
+        with server.local_server('a.gguf', None, 8192, {}, unload=False) as url:
+            self.assertEqual(url, 'http://127.0.0.1:53211/v1')
+        with server.local_server('a.gguf', None, 8192, {}, unload=False) as reused:
+            self.assertEqual(reused, url)
+        choose.assert_called_once_with(8091)
+        popen.assert_called_once()
+        args = popen.call_args.args[0]
+        self.assertEqual(args[args.index('--port') + 1], '53211')
+        self.assertEqual(opener.return_value.open.call_args.args[0], 'http://127.0.0.1:53211/health')
+        popen.return_value.terminate.assert_not_called()
+
+    def test_real_occupied_port_selects_another_without_touching_listener(self):
+        with socket.socket() as external:
+            external.bind(('127.0.0.1', 0))
+            external.listen(1)
+            occupied = external.getsockname()[1]
+            selected = server.choose_port(occupied)
+            self.assertNotEqual(selected, occupied)
+            self.assertGreater(selected, 0)
+            self.assertEqual(external.getsockname()[1], occupied)
+
+    def test_zero_selects_an_available_port(self):
+        selected = server.choose_port(0)
+        self.assertTrue(1 <= selected <= 65535)
+
+    @patch('managed_server.socket.socket')
+    def test_failure_to_allocate_port_has_actionable_error(self, sock):
+        sock.return_value.__enter__.return_value.bind.side_effect = OSError('denied')
+        with self.assertRaisesRegex(RuntimeError, 'port localhost'):
+            server.choose_port(8091)
 
     @patch('managed_server.launch')
     def test_cancellation_and_request_failure_clean_up_even_when_keep_loaded(self, launch):
