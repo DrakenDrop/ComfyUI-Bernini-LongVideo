@@ -1,6 +1,6 @@
 {
   "last_node_id": 16,
-  "last_link_id": 19,
+  "last_link_id": 20,
   "nodes": [
     {
       "id": 1,
@@ -1148,6 +1148,18 @@
           "name": "report",
           "type": "STRING",
           "links": []
+        },
+        {
+          "name": "frame_count",
+          "type": "INT",
+          "links": []
+        },
+        {
+          "name": "fps",
+          "type": "FLOAT",
+          "links": [
+            20
+          ]
         }
       ],
       "properties": {
@@ -1209,6 +1221,14 @@
           "shape": 7,
           "type": "VAE",
           "link": null
+        },
+        {
+          "name": "frame_rate",
+          "type": "FLOAT",
+          "link": 20,
+          "widget": {
+            "name": "frame_rate"
+          }
         }
       ],
       "outputs": [
@@ -1413,6 +1433,14 @@
       15,
       1,
       "AUDIO"
+    ],
+    [
+      20,
+      14,
+      3,
+      15,
+      4,
+      "FLOAT"
     ]
   ],
   "groups": [],
