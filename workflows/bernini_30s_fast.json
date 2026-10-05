@@ -656,12 +656,16 @@
         false,
         "",
         "http://127.0.0.1:8000/v1",
-        "bernini-enhancer",
+        "auto",
         "VLLM_API_KEY",
         0,
         0.2,
         512,
-        90
+        90,
+        "server (vLLM / OpenAI-compatible)",
+        "auto",
+        8192,
+        true
       ]
     },
     {
