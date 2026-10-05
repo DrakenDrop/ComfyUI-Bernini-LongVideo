@@ -1,6 +1,6 @@
 {
   "date": "2026-10-05",
-  "cpu_unit_tests": 29,
+  "cpu_unit_tests": 38,
   "result": "passed",
   "upstream_api_signature_checks": "passed",
   "comfyui_source_commit": "5c460d8172fe30761ff67c0df3d5643bb74e0d70",
@@ -12,7 +12,8 @@
     "Python compilation",
     "GGUF discovery and conservative mmproj matching",
     "Owned server lifecycle using mocks",
-    "Real localhost HTTP discovery and completion against a fixture"
+    "Real localhost HTTP discovery and completion against a fixture",
+    "llama-server discovery using MiniMaxH3 configuration, common folders, quoted paths, and directory layouts"
   ],
   "not_tested": [
     "GPU Bernini inference",

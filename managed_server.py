@@ -3,7 +3,6 @@ import atexit
 from contextlib import contextmanager
 import os
 from pathlib import Path
-import shutil
 import socket
 import subprocess
 import tempfile
@@ -35,13 +34,11 @@ def stop_owned():
 
 
 def executable(config):
-    configured = config.get("llama_server_path", "")
-    found = shutil.which(configured or "llama-server")
-    if not found and configured and Path(configured).is_file():
-        found = str(Path(configured).resolve())
-    if not found:
-        raise FileNotFoundError("llama-server belum ditemukan. Isi llama_server_path di bernini_config.json atau tambahkan ke PATH.")
-    return found
+    if __package__:
+        from .server_paths import find_llama_server
+    else:  # Standalone CPU tests.
+        from server_paths import find_llama_server
+    return find_llama_server(config)
 
 
 def launch(model, projector, context_size, config, check_cancel):
