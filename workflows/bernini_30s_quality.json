@@ -431,7 +431,7 @@
         "force_rate": 16,
         "custom_width": 0,
         "custom_height": 0,
-        "frame_load_cap": 480,
+        "frame_load_cap": 481,
         "skip_first_frames": 0,
         "select_every_nth": 1,
         "format": "None"
@@ -980,6 +980,11 @@
           "links": [
             18
           ]
+        },
+        {
+          "name": "source_images",
+          "type": "IMAGE",
+          "links": []
         }
       ],
       "properties": {
@@ -1097,7 +1102,7 @@
         "Node name for S&R": "Note"
       },
       "widgets_values": [
-        "Pilih/upload video >=30 detik. Isi instruksi di Prompt Enhancer. enabled=false tetap meneruskan prompt. Untuk vLLM: nyalakan server lalu enabled=true; sample_frames=4 hanya untuk model vision. Input dan output harus 16 fps. Jika video pendek, hasil juga pendek. Mulai max_seconds=6 untuk memeriksa satu sambungan. Tidak ada jaminan bebas flicker. QUALITY: tanpa LoRA, 20 langkah / split 10, CFG 4 adalah titik awal eksperimen, bukan preset resmi. Tiled VAE aktif; pada 96 GB coba non-tiled untuk benchmark. Pilih resolution=480p/720p pada Long V2V. Rasio input dipertahankan persis; 16:9 pada target480p menjadi864x486. Width/height hanya untuk custom. Loader memakai ukuran asli; perhatikan RAM untuk input resolusi tinggi."
+        "Pilih/upload video >=30 detik. Isi instruksi di Prompt Enhancer. enabled=false tetap meneruskan prompt. Untuk vLLM: nyalakan server lalu enabled=true; sample_frames=4 hanya untuk model vision. Input dan output harus 16 fps. Jika video pendek, hasil juga pendek. Mulai max_seconds=6 untuk memeriksa satu sambungan. Tidak ada jaminan bebas flicker. QUALITY: tanpa LoRA, 20 langkah / split 10, CFG 4 adalah titik awal eksperimen, bukan preset resmi. Tiled VAE aktif; pada 96 GB coba non-tiled untuk benchmark. Pilih resolution=480p/720p pada Long V2V. Rasio input dipertahankan persis; 16:9 pada target480p menjadi864x486. Width/height hanya untuk custom. Loader memakai ukuran asli; perhatikan RAM untuk input resolusi tinggi. Frame output mengikuti 4n+1: 30s/16fps = 481 frame; sumber 480 frame mengulang frame terakhir sekali. Gunakan images + source_images untuk perbandingan dan fps ke Video Combine."
       ]
     }
   ],
