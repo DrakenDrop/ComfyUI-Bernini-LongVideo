@@ -38,6 +38,10 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(nodes[15]['widgets_values']['frame_rate'],16)
             self.assertEqual(sampler['widgets_values'][2:6],[16,30,81,17])
             self.assertEqual(sampler['widgets_values'][-1],'480p')
+            self.assertEqual([(o['name'], o['type']) for o in sampler['outputs']],
+                             [('images', 'IMAGE'), ('report', 'STRING'), ('frame_count', 'INT'), ('fps', 'FLOAT')])
+            fps_link = next(i['link'] for i in nodes[15]['inputs'] if i['name'] == 'frame_rate')
+            self.assertEqual(links[fps_link][1:3], [14, 3])
             self.assertFalse(any(n['type']=='ImageFromBatch' for n in nodes.values()))
 
     def test_custom_widget_layout_matches_python_schema(self):
@@ -57,7 +61,10 @@ class WorkflowTests(unittest.TestCase):
             data=json.loads(path.read_text(encoding='utf-8'))
             for node in data['nodes']:
                 if node['type'] not in module.NODE_CLASS_MAPPINGS: continue
-                schema=module.NODE_CLASS_MAPPINGS[node['type']].INPUT_TYPES()
+                node_class=module.NODE_CLASS_MAPPINGS[node['type']]
+                self.assertEqual(tuple(o['type'] for o in node['outputs']), node_class.RETURN_TYPES)
+                self.assertEqual(tuple(o['name'] for o in node['outputs']), node_class.RETURN_NAMES)
+                schema=node_class.INPUT_TYPES()
                 widgets=[]
                 for name, value in {**schema['required'], **schema.get('optional', {})}.items():
                     if isinstance(value[0],list) or value[0] in scalar:
