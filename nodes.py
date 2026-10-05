@@ -6,6 +6,8 @@ import torch
 
 from .core import target_frames, render_timeline, plan_windows
 from .enhancer import enhance
+from .local_models import load_config, choices, resolve, SERVER_DEFAULT, MMPROJ_AUTO, MMPROJ_NONE
+from .managed_server import local_server
 
 log = logging.getLogger(__name__)
 
@@ -13,29 +15,46 @@ log = logging.getLogger(__name__)
 class BerniniPromptEnhancerVLLM:
     @classmethod
     def INPUT_TYPES(cls):
+        models, projectors = choices(load_config())
         return {"required": {
             "instruction": ("STRING", {"multiline": True, "default": ""}),
             "enabled": ("BOOLEAN", {"default": False}),
             "scene_description": ("STRING", {"multiline": True, "default": ""}),
             "base_url": ("STRING", {"default": "http://127.0.0.1:8000/v1"}),
-            "model": ("STRING", {"default": ""}),
+            "model": ("STRING", {"default": "auto"}),
             "api_key_env": ("STRING", {"default": "VLLM_API_KEY"}),
             "sample_frames": ("INT", {"default": 0, "min": 0, "max": 8}),
             "temperature": ("FLOAT", {"default": 0.2, "min": 0, "max": 2}),
             "max_tokens": ("INT", {"default": 512, "min": 64, "max": 4096}),
             "timeout": ("INT", {"default": 90, "min": 5, "max": 600}),
-        }, "optional": {"source_frames": ("IMAGE",)}}
+        }, "optional": {"source_frames": ("IMAGE",),
+            "llm_model": (models, {"default": SERVER_DEFAULT}),
+            "mmproj": (projectors, {"default": MMPROJ_AUTO}),
+            "context_size": ("INT", {"default": 8192, "min": 1024, "max": 131072, "step": 1024}),
+            "unload_llm_after": ("BOOLEAN", {"default": True}),
+        }}
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("enhanced_prompt",)
     FUNCTION = "run"
     CATEGORY = "Bernini/Long Video"
-    DESCRIPTION = "Optional text/VLM prompt rewriting through your vLLM server. sample_frames > 0 sends sampled images to that server."
+    DESCRIPTION = "Prompt enhancer with local GGUF discovery or vLLM model auto-detection. sample_frames > 0 sends sampled images to the selected server."
 
     def run(self, instruction, enabled, scene_description, base_url, model, api_key_env,
-            sample_frames, temperature, max_tokens, timeout, source_frames=None):
+            sample_frames, temperature, max_tokens, timeout, source_frames=None,
+            llm_model=SERVER_DEFAULT, mmproj=MMPROJ_AUTO, context_size=8192, unload_llm_after=True):
         if not enabled:
             return (instruction,)
+        if not instruction.strip():
+            raise ValueError("Isi instruksi edit terlebih dahulu.")
+        config = load_config()
+        local_model = projector = None
+        if llm_model != SERVER_DEFAULT:
+            local_model, projector = resolve(llm_model, mmproj, config)
+            if mmproj == MMPROJ_NONE:
+                sample_frames = 0
+            elif sample_frames and source_frames is not None and not projector:
+                raise ValueError("mmproj pasangan model tidak ditemukan atau ambigu. Pilih mmproj secara manual, atau none (text only).")
         frames = None
         if sample_frames and source_frames is not None:
             if len(source_frames) == 0:
@@ -43,6 +62,16 @@ class BerniniPromptEnhancerVLLM:
             # Copy only requested frames from GPU, not the entire video.
             indices = np.linspace(0, len(source_frames) - 1, min(sample_frames, len(source_frames)), dtype=int).tolist()
             frames = source_frames[indices].detach().cpu().numpy()
+        if local_model:
+            import comfy.model_management as mm
+            mm.throw_exception_if_processing_interrupted()
+            # ComfyUI cannot track VRAM allocated by a separate llama-server process.
+            mm.unload_all_models()
+            mm.soft_empty_cache()
+            with local_server(local_model, projector, context_size, config, unload_llm_after,
+                              mm.throw_exception_if_processing_interrupted) as local_url:
+                return (enhance(instruction, scene_description, local_url, "bernini-local", "",
+                                temperature, max_tokens, timeout, frames, sample_frames),)
         return (enhance(instruction, scene_description, base_url, model, api_key_env,
                         temperature, max_tokens, timeout, frames, sample_frames),)
 
@@ -151,4 +180,4 @@ class BerniniLongV2V:
 NODE_CLASS_MAPPINGS = {"BerniniLongV2V": BerniniLongV2V,
                        "BerniniPromptEnhancerVLLM": BerniniPromptEnhancerVLLM}
 NODE_DISPLAY_NAME_MAPPINGS = {"BerniniLongV2V": "Bernini · Long V2V",
-                              "BerniniPromptEnhancerVLLM": "Bernini · Prompt Enhancer (vLLM)"}
+                              "BerniniPromptEnhancerVLLM": "Bernini · Prompt Enhancer (Auto Model)"}

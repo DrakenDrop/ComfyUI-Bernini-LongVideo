@@ -1,6 +1,6 @@
-# Bernini Long Video + vLLM Prompt Enhancer
+# Bernini Long Video + Auto Model Prompt Enhancer
 
-Custom nodes ComfyUI untuk mengedit video panjang dengan **Bernini-R** melalui pemrosesan per potongan dan overlap. Paket ini menyediakan prompt enhancer melalui vLLM serta contoh workflow V2V 30 detik pada 16 fps.
+Custom nodes ComfyUI untuk mengedit video panjang dengan **Bernini-R** melalui pemrosesan per potongan dan overlap. Paket ini menyediakan prompt enhancer melalui model GGUF lokal atau server vLLM serta contoh workflow V2V 30 detik pada 16 fps.
 
 ## Fitur
 
@@ -8,7 +8,8 @@ Custom nodes ComfyUI untuk mengedit video panjang dengan **Bernini-R** melalui p
 - Penyambungan frame menggunakan crossfade atau cut.
 - Sampling high-noise dan low-noise melalui dukungan Bernini native ComfyUI.
 - Opsi tiled VAE untuk mengatur penggunaan memori.
-- Prompt enhancer berbasis teks atau cuplikan gambar melalui server vLLM.
+- Prompt enhancer berbasis teks atau cuplikan gambar melalui server vLLM atau llama.cpp lokal.
+- Auto-detect GGUF dari `models/LLM`, dropdown model dan `mmproj`, serta deteksi served model melalui `/v1/models`.
 - Contoh workflow fast dan quality.
 
 ## Instalasi
@@ -81,14 +82,28 @@ INT8 menghemat penyimpanan bobot, tetapi tidak otomatis lebih cepat pada semua k
 
 Memori RAM sistem tetap penting: output float32 480×480×832×3 sendiri sekitar **2.14 GiB**, ditambah input, temporary buffer, model offload dan encoder video. Ini bukan streaming disk; pemuatan input dan penyimpanan hasil tetap berbentuk batch IMAGE. Ukuran VRAM puncak dan durasi render belum diukur.
 
-## Prompt enhancer vLLM / VLM
+## Prompt enhancer: auto-detect model lokal
+
+Pola pemilihan model mengikuti [ComfyUI-MiniMaxH3-Prompter](https://github.com/DrakenDrop/ComfyUI-MiniMaxH3-Prompter): node memindai GGUF dalam `ComfyUI/models/LLM` dan subfoldernya. Ini adalah model **prompt enhancer**; bobot diffusion Bernini tetap dipilih pada loader ComfyUI.
+
+1. Letakkan model instruct GGUF di `ComfyUI/models/LLM/`. Untuk vision, letakkan `mmproj` yang cocok dari distribusi model yang sama. Model harus didukung oleh build llama.cpp yang dipakai.
+2. Pasang [llama.cpp](https://github.com/ggml-org/llama.cpp/releases) dengan backend GPU yang sesuai. Salin `bernini_config.example.json` menjadi `bernini_config.json` di folder custom node ini; isi `llama_server_path` dengan path executable. Contoh Windows: `"C:/llama.cpp/llama-server.exe"`. Jika executable sudah ada di PATH, biarkan kosong.
+3. Restart ComfyUI dan refresh halaman. Pilih file pada dropdown `llm_model`, lalu aktifkan `enabled`. Setelah menambahkan file, refresh daftar node/model melalui frontend atau reload halaman untuk mengambil daftar terbaru.
+4. `mmproj=auto` mencocokkan nama keluarga model setelah menghapus penanda kuantisasi. File generik seperti `mmproj-F16.gguf` dipilih hanya bila folder itu berisi satu keluarga model dan satu projector generik. Bila pasangan tidak jelas, pilih secara manual. Untuk teks saja gunakan `none (text only)` atau `sample_frames=0`.
+5. `context_size=8192` adalah nilai awal untuk teks dan gambar; sesuaikan dengan model. `unload_llm_after=true` menutup proses lokal milik node setelah prompt selesai sehingga VRAM dilepas sebelum Bernini berjalan.
+
+Node menjalankan llama-server di localhost, port default **8091**, dan melepas model ComfyUI yang sedang berada di GPU sebelum loading LLM lokal. `base_url`, `model`, dan `api_key_env` hanya dipakai pada mode server. Pada mode lokal, node memakai alias internal tanpa mengirim API key server lain. Dengan `unload_llm_after=false`, model lokal tetap memakai VRAM; proses yang sama digunakan lagi jika konfigurasi sama. Error dan pembatalan saat startup tetap membersihkan proses milik node. Pembatalan saat request HTTP menunggu respons/timeout; atur `timeout` sesuai kebutuhan.
+
+Konfigurasi tambahan: `extra_model_dirs` menerima daftar folder; path terdaftar ComfyUI dengan key `LLM`/`llm` juga dipindai. Model split hanya menampilkan shard pertama; seluruh shard harus tersedia. Node tidak mengunduh model atau llama.cpp. Port yang sudah dipakai menyebabkan error, dan node tidak menghentikan server milik proses lain. Log startup ada di folder temporary sistem sebagai `bernini-llama-<pid>.log`.
+
+## Prompt enhancer melalui server vLLM / VLM
 
 vLLM adalah server inference. Untuk memahami gambar, server harus melayani **VLM**; untuk teks saja, model instruct biasa juga bisa. Node mengirim request OpenAI-compatible `/v1/chat/completions`.
 
-Default `enabled=false`: instruksi diteruskan langsung ke CLIP, sehingga workflow dapat dipakai sebelum server tersedia. Dengan `enabled=true`, isi:
+Default `enabled=false`: instruksi diteruskan langsung ke CLIP, sehingga workflow dapat dipakai sebelum server tersedia. Dengan `enabled=true` dan `llm_model=server (vLLM / OpenAI-compatible)`, isi:
 
 - `base_url`: alamat server yang dapat diakses **dari proses ComfyUI**, default `http://127.0.0.1:8000/v1`.
-- `model`: served model name yang tepat, contoh `bernini-enhancer`.
+- `model=auto` (atau kosong): deteksi nama model melalui `GET /v1/models`. Jika server menyediakan beberapa model, node menampilkan nama yang tersedia dan meminta pilihan pada field `model`. Nama eksplisit seperti `bernini-enhancer` tetap didukung dan melewati discovery. Deteksi nama tidak membuktikan dukungan vision; gunakan model VLM untuk gambar.
 - `sample_frames=0`: hanya teks dan scene_description.
 - `sample_frames=4`: kirim empat frame kronologis yang tersebar di batch input; gunakan model vision dengan limit minimal empat gambar. Gambar diperkecil maksimal sisi 512 px. Ini bukan analisis gerakan per frame.
 - `api_key_env`: nama environment variable, default `VLLM_API_KEY`. Isi secret di environment proses ComfyUI, bukan di workflow JSON.
@@ -123,6 +138,6 @@ Jalankan pada Python yang memiliki NumPy/Pillow:
 python -m unittest discover -s tests -v
 ```
 
-17 tes CPU lulus untuk logika timeline, overlap, padding, penanganan respons enhancer, dan struktur workflow. Pengujian HTTP menggunakan mock.
+Tes CPU mencakup timeline, overlap, padding, discovery model, pemilihan projector, kepemilikan proses server, respons enhancer, dan struktur workflow. Lihat `validation.json` untuk hasil terakhir; pengujian proses llama-server memakai mock.
 
-Validasi render GPU, integrasi server vLLM nyata, dan benchmark performa belum dilakukan. Mulai dengan klip pendek untuk memeriksa hasil dan sambungan sebelum memproses video penuh.
+Validasi render GPU, inferensi model llama.cpp/vLLM nyata, dan benchmark performa belum dilakukan. Mulai dengan klip pendek untuk memeriksa hasil dan sambungan sebelum memproses video penuh.

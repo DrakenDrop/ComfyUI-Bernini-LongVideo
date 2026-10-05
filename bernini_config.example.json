@@ -1,0 +1,7 @@
+{
+  "llama_server_path": "",
+  "extra_model_dirs": [],
+  "managed_port": 8091,
+  "startup_wait_seconds": 900,
+  "gpu_layers": 999
+}
