@@ -10,9 +10,10 @@ from core import plan_windows, render_timeline, target_frames
 
 class TimelineTests(unittest.TestCase):
     def test_30_seconds(self):
-        windows = plan_windows(480)
+        windows = plan_windows(target_frames(1000, 16, 30))
         self.assertEqual(len(windows), 8)
-        self.assertEqual(windows[-1].end, 480)
+        self.assertEqual(windows[-1].end, 481)
+        self.assertEqual(windows[-1].padded, 33)
         self.assertTrue(all((w.padded - 1) % 4 == 0 for w in windows))
         self.assertTrue(all(w.padded <= 81 for w in windows))
 
@@ -42,11 +43,22 @@ class TimelineTests(unittest.TestCase):
         self.assertTrue((np.diff(out[64:81,0,0,0]) > 0).all())
 
     def test_limits_and_short_sources(self):
-        self.assertEqual(target_frames(1000,16,30),480)
+        self.assertEqual(target_frames(1000,16,5),81)
+        self.assertEqual(target_frames(1000,16,10),161)
+        self.assertEqual(target_frames(1000,16,30),481)
         self.assertEqual(target_frames(81,16,30),81)
-        self.assertEqual(target_frames(1000,16,0),1000)
+        self.assertEqual(target_frames(80,16,30),81)
+        self.assertEqual(target_frames(1000,16,0),1001)
+        self.assertEqual(target_frames(1000,23.976,5),121)
+        self.assertEqual(target_frames(1000,16,0.01),5)
         for args in [(0,16,30),(100,0,30),(100,16,-1),(100,float('nan'),30)]:
             with self.assertRaises(ValueError): target_frames(*args)
+
+    def test_short_source_alignment_adds_at_most_three_frames(self):
+        for available in range(1, 500):
+            total = target_frames(available, 16, 0)
+            self.assertEqual((total - 1) % 4, 0)
+            self.assertTrue(0 <= total - available <= 3)
 
     def test_invalid_windows_and_renderer(self):
         for args in [(0,81,17),(10,80,17),(10,81,81),(10,81,-1)]:

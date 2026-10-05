@@ -31,7 +31,7 @@ class WorkflowTests(unittest.TestCase):
             negative_link=next(i['link'] for i in sampler['inputs'] if i['name']=='negative')
             self.assertEqual(links[negative_link][1],10)
             self.assertEqual(nodes[7]['widgets_values']['force_rate'],16)
-            self.assertEqual(nodes[7]['widgets_values']['frame_load_cap'],480)
+            self.assertEqual(nodes[7]['widgets_values']['frame_load_cap'],481)
             self.assertEqual(nodes[7]['widgets_values']['format'],'None')
             self.assertEqual(nodes[7]['widgets_values']['custom_width'],0)
             self.assertEqual(nodes[7]['widgets_values']['custom_height'],0)
@@ -39,7 +39,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(sampler['widgets_values'][2:6],[16,30,81,17])
             self.assertEqual(sampler['widgets_values'][-1],'480p')
             self.assertEqual([(o['name'], o['type']) for o in sampler['outputs']],
-                             [('images', 'IMAGE'), ('report', 'STRING'), ('frame_count', 'INT'), ('fps', 'FLOAT')])
+                             [('images', 'IMAGE'), ('report', 'STRING'), ('frame_count', 'INT'), ('fps', 'FLOAT'), ('source_images', 'IMAGE')])
             fps_link = next(i['link'] for i in nodes[15]['inputs'] if i['name'] == 'frame_rate')
             self.assertEqual(links[fps_link][1:3], [14, 3])
             self.assertFalse(any(n['type']=='ImageFromBatch' for n in nodes.values()))
