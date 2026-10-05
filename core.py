@@ -49,6 +49,56 @@ def target_frames(available, fps, seconds):
     return 1 + 4 * ((count - 1 + 3) // 4)
 
 
+def input_frame_rate(video_info, input_fps, output_fps):
+    """VHS loaded_fps describes the actual IMAGE batch, unlike source_fps."""
+    if video_info is not None:
+        if not isinstance(video_info, dict) or 'loaded_fps' not in video_info:
+            raise ValueError("video_info harus berasal dari VHS Load Video dan memiliki loaded_fps.")
+        value, origin = video_info['loaded_fps'], 'video_info.loaded_fps'
+    else:
+        try:
+            manual = float(input_fps)
+        except (TypeError, ValueError):
+            raise ValueError("input_fps harus angka >= 0.") from None
+        if not math.isfinite(manual) or manual < 0:
+            raise ValueError("input_fps harus angka finite >= 0.")
+        value, origin = (manual, 'input_fps') if manual else (output_fps, 'assumed_from_output_fps')
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        raise ValueError("FPS input tidak valid.") from None
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError("FPS input harus positif dan finite.")
+    return value, origin
+
+
+def source_frame_indices(available, input_fps, output_fps, seconds):
+    """Sample source timestamps at output_fps, then retain 4n+1 tail alignment.
+
+    Nearest-frame selection changes sampling density, not motion speed. There is
+    no interpolation or optical flow. The final 0-3 alignment frames repeat the
+    last selected source frame, never rescale the whole clip's time axis.
+    """
+    for rate in (input_fps, output_fps):
+        if not math.isfinite(rate) or rate <= 0:
+            raise ValueError("FPS harus positif dan finite.")
+    if available < 1:
+        raise ValueError("Video input kosong.")
+    count_float = available * output_fps / input_fps
+    if not math.isfinite(count_float):
+        raise ValueError("Jumlah frame hasil konversi FPS terlalu besar.")
+    # Avoid one spurious sample from floating-point noise at an integer boundary.
+    nearest = round(count_float)
+    if abs(count_float - nearest) < 1e-9:
+        count_float = nearest
+    resampled_available = max(1, math.ceil(count_float))
+    total = target_frames(resampled_available, output_fps, seconds)
+    valid = min(total, resampled_available)
+    times = np.minimum(np.arange(total, dtype=np.float64), valid - 1) / output_fps
+    indices = np.minimum(np.floor(times * input_fps + 0.5), available - 1).astype(np.int64)
+    return indices, valid, total - valid
+
+
 def render_timeline(source, total, chunk_frames, overlap, blend_mode, render, progress=None):
     """render receives padded source frames and the window index, returns NHWC.
 

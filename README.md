@@ -49,7 +49,7 @@ Pilih nama file yang sesuai jika letak model Anda berbeda. Nama dan bobot model 
 - Video loader: `force_rate=16`, `frame_load_cap=481`, `select_every_nth=1`, `format=None`.
 - Long V2V: `fps=16`, `max_seconds=30`, `chunk_frames=81`, `overlap=17`.
 - Video Combine: `frame_rate=16`, audio sumber tersambung.
-- Parameter fps pada node Long V2V menghitung durasi; **tidak meresample input**. Bila mengubah fps, ubah loader dan saver juga.
+- `fps` Long V2V adalah FPS output. Sambungkan `video_info` loader ke Long V2V: node memakai `loaded_fps` untuk menyesuaikan frame berdasarkan waktu jika berbeda dari FPS output. Contoh workflow sudah memasang sambungan ini. Output `fps` Long V2V tetap masuk ke Video Combine.
 - Output default memakai `resolution=480p`. Node menghitung ukuran dari rasio video input, melakukan resize per window, dan memakai padding sementara untuk memenuhi kelipatan 16. Padding dibuang setelah decode. Loader contoh memakai `custom_width=0`, `custom_height=0`, `format=None` agar rasio asli tidak berubah sebelum masuk ke node.
 
 Mulai dengan `max_seconds=6`: ini menguji dua window dan satu sambungan. Setelah hasil benar, naikkan kembali menjadi 30. Sumber masih dimuat hingga batas loader; turunkan frame_load_cap juga jika ingin uji pendek lebih hemat RAM.
@@ -58,15 +58,15 @@ Mulai dengan `max_seconds=6`: ini menguji dua window dan satu sambungan. Setelah
 
 ## Frame count, FPS, dan video pembanding
 
-Output **Bernini · Long V2V**: `images`, `report`, `frame_count` (INT), `fps` (FLOAT), dan `source_images` (IMAGE). Posisi output lama tetap sama. `frame_count` sama dengan jumlah frame pada `images` dan `source_images`. `fps` meneruskan nilai input node, bukan mendeteksi FPS dari tensor IMAGE atau melakukan resampling.
+Output **Bernini · Long V2V**: `images`, `report`, `frame_count` (INT), `fps` (FLOAT), dan `source_images` (IMAGE). Posisi output lama tetap sama. `frame_count` sama dengan jumlah frame pada `images` dan `source_images`. Output `fps` adalah FPS target node. `source_images` sudah mengikuti penyesuaian FPS, pemotongan durasi, dan padding akhir yang sama dengan sumber untuk model.
 
 Target durasi = `1 + 4 × ceil(fps × max_seconds / 4)`. Pada 16 FPS: **5 detik = 81 frame, 10 detik = 161 frame, 30 detik = 481 frame**. Untuk nilai lain, target dibulatkan ke atas ke pola 4n+1 terdekat. Durasi file adalah `frame_count / fps`, sedangkan rentang waktu frame pertama sampai terakhir adalah `(frame_count - 1) / fps`. Contohnya 81 frame pada 16 FPS memiliki rentang 5 detik dan durasi file 5,0625 detik.
 
-Sumber dipotong hingga target tersebut. Jika sumber lebih pendek, node hanya mengulang frame terakhir sebanyak 0–3 frame untuk mencapai 4n+1 terdekat; tidak memperpanjangnya sampai seluruh durasi yang diminta. Input 80 frame menjadi 81 dan frame tambahan tetap disertakan dalam hasil. `max_seconds=0` memakai seluruh sumber dengan penyelarasan akhir yang sama. `source_images` berisi sumber RGB yang dipotong/ditambah frame akhir identik, pada resolusi sumber, untuk pembanding.
+Sumber disesuaikan ke FPS target berdasarkan waktu, lalu dipotong hingga target tersebut. Jika sumber lebih pendek, node hanya mengulang frame sampel terakhir sebanyak 0–3 frame untuk mencapai 4n+1 terdekat; tidak memperpanjangnya sampai seluruh durasi yang diminta. Input 80 frame yang sudah 16 FPS menjadi 81 dan frame tambahan tetap disertakan dalam hasil. `max_seconds=0` memakai seluruh durasi sumber dengan penyelarasan akhir yang sama. `source_images` berisi sumber RGB pada resolusi sumber untuk pembanding.
 
 `chunk_frames=81` tetap membatasi panjang tiap window. Padding tambahan di dalam window (misalnya karena overlap tidak sejajar grid temporal) hanya untuk pemrosesan window itu dan tetap dibuang saat penyambungan. Frame akhir yang menyelaraskan timeline utama dipertahankan; overlap tidak dihitung dua kali.
 
-Untuk memeriksa hasil, lihat `input_frames`, `source_frames_used`, `tail_padding_frames`, `frames`, `fps`, `seconds` (durasi file), dan `frame_span_seconds` pada `report`. Periksa juga batas frame loader, `select_every_nth`, skip frame, node pemotong batch, dan durasi sumber. FPS Long V2V harus sama dengan FPS frame yang dimuat loader.
+Untuk memeriksa hasil, lihat `input_frames`, `input_fps`, `input_fps_origin`, `input_duration_seconds`, `resampled`, `resampled_frames`, `source_frames_used`, `tail_padding_frames`, `frames`, `fps`, `seconds` (durasi file), dan `frame_span_seconds` pada `report`. `source_frames_used` adalah panjang bagian awal input yang diakses sampai indeks sumber terakhir, bukan jumlah frame unik setelah resampling. Periksa juga batas frame loader, `select_every_nth`, skip frame, node pemotong batch, dan durasi sumber.
 
 Untuk perbandingan menggunakan Image Concatenate:
 
@@ -75,6 +75,20 @@ Untuk perbandingan menggunakan Image Concatenate:
 3. Hubungkan `fps` Long V2V ke input `frame_rate` Video Combine pembanding dan Video Combine hasil edit. Ubah widget menjadi input jika belum ada soketnya.
 
 Update paket, restart ComfyUI, lalu refresh halaman. Jika node lama belum menampilkan output baru, tambahkan ulang **Bernini · Long V2V** dan sambungkan kembali. Contoh workflow sudah menghubungkan output FPS ke Video Combine.
+
+## Mencegah slow motion akibat FPS berbeda
+
+Tensor IMAGE tidak membawa metadata FPS. Versi sebelumnya memperlakukan semua frame masuk sebagai `fps` target: jika loader memakai `force_rate=0` dan video asli 30 FPS, menyimpan frame itu pada 16 FPS memperlambat gerakan menjadi 16/30 kecepatan asli. Menambahkan satu frame untuk pola 4n+1 hanya memengaruhi ujung klip, tidak memperlambat seluruh gerakan.
+
+Sambungkan **VHS Load Video `video_info` → Bernini Long V2V `video_info`**. Node membaca **`loaded_fps`**, yaitu FPS batch setelah `force_rate` dan `select_every_nth`, bukan FPS asli file. Node memilih frame pada waktu `i / fps` dengan sampel sumber terdekat. Ini resampling frame, tanpa optical flow atau interpolasi gerak. Sumber 300 frame/30 FPS pada target 16 FPS menghasilkan 160 sampel waktu + 1 frame penyelarasan akhir, bukan memainkan 300 frame pada 16 FPS. Gerakan tetap mengikuti waktu sumber; frame yang dilewati saat menurunkan FPS dapat membuat gerakan kurang halus dibanding sumber.
+
+- Prioritas FPS input: `video_info.loaded_fps` → `input_fps` manual jika >0 → asumsi sama dengan `fps` output. Jika diasumsikan, log dan `report.timing_warning` menjelaskannya. Node tidak bisa menebak FPS dari IMAGE saja.
+- `input_fps` manual harus sesuai dengan **batch yang masuk**, bukan selalu FPS file asli. Jika loader sudah `force_rate=16`, input batch adalah 16 FPS; jangan isi 30 hanya karena file aslinya 30 FPS. Metadata yang tersambung selalu diprioritaskan agar tidak terjadi konversi dua kali.
+- Cara sederhana: loader `force_rate=16`, `select_every_nth=1`, Long V2V `fps=16`, lalu output `fps` ke saver. Contoh workflow tetap memakai ini untuk menghemat jumlah frame yang dimuat, ditambah metadata untuk perubahan pengaturan berikutnya.
+- `frame_load_cap` dihitung dalam frame yang dimuat. Untuk 10 detik, 161 frame cocok jika loader 16 FPS; pada `force_rate=0` dan sumber 30 FPS, cap 161 hanya menyediakan sekitar 5,37 detik sumber. Naikkan cap sesuai FPS loader atau set 0 untuk seluruh input, dengan memperhatikan RAM.
+- Bandingkan `source_images` dan `images` pada FPS output yang sama. Jika sumber pembanding bergerak normal tetapi hasil Bernini tetap mengubah timing/pose, itu kemungkinan perubahan generatif model; perbaikan FPS tidak menjamin gerakan model identik.
+
+Metadata scalar FPS mengasumsikan interval frame seragam. Untuk sumber dengan FPS variabel, normalkan di loader memakai `force_rate` tetap. Jika ada node pengubah urutan/jumlah frame sebelum Bernini, metadata harus sesuai batch setelah perubahan itu.
 
 ## Resolusi dan rasio video
 

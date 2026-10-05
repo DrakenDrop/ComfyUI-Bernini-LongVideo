@@ -4,7 +4,7 @@ import logging
 import numpy as np
 import torch
 
-from .core import target_frames, render_timeline, plan_windows
+from .core import render_timeline, plan_windows, input_frame_rate, source_frame_indices
 from .enhancer import enhance
 from .local_models import load_config, choices, resolve, SERVER_DEFAULT, MMPROJ_AUTO, MMPROJ_NONE
 from .managed_server import local_server
@@ -109,7 +109,7 @@ class BerniniLongV2V:
             "sampler": ("SAMPLER",), "sigmas_high": ("SIGMAS",), "sigmas_low": ("SIGMAS",),
             "width": ("INT", {"default": 480, "min": 16, "max": 8192, "step": 16, "tooltip": "Only used when resolution=custom."}),
             "height": ("INT", {"default": 832, "min": 16, "max": 8192, "step": 16, "tooltip": "Only used when resolution=custom."}),
-            "fps": ("FLOAT", {"default": 16, "min": 1, "max": 120}),
+            "fps": ("FLOAT", {"default": 16, "min": 1, "max": 120, "tooltip": "Output FPS. Connect loader video_info or set input_fps so input frames can be resampled without changing playback speed."}),
             "max_seconds": ("FLOAT", {"default": 30, "min": 0, "max": 3600, "tooltip": "Endpoint-inclusive duration, rounded up to 4n+1 frames: 5s at 16fps = 81 frames. 0 = all input. Short inputs repeat at most 3 final frames to align."}),
             "chunk_frames": ("INT", {"default": 81, "min": 5, "max": 513, "step": 4}),
             "overlap": ("INT", {"default": 17, "min": 0, "max": 512}),
@@ -124,18 +124,21 @@ class BerniniLongV2V:
             "ref_max_size": ("INT", {"default": 512, "min": 16, "max": 8192, "step": 16}),
         }, "optional": {"reference_images": ("IMAGE",),
             "resolution": (RESOLUTIONS, {"default": "480p", "tooltip": "Target short edge; uses the nearest even dimensions with the EXACT input ratio. 16:9: 480p = 864x486, 720p = 1280x720. Padding is removed after rendering. custom keeps the legacy width/height behavior."}),
+            "video_info": ("VHS_VIDEOINFO", {"tooltip": "Connect video_info from the loader supplying source_video. Uses loaded_fps, including force_rate/select_every_nth; takes priority over input_fps."}),
+            "input_fps": ("FLOAT", {"default": 0, "min": 0, "max": 1000, "tooltip": "FPS of the incoming IMAGE batch if video_info is unavailable. 0 assumes the input already matches output fps. IMAGE alone contains no FPS metadata."}),
         }}
 
     RETURN_TYPES = ("IMAGE", "STRING", "INT", "FLOAT", "IMAGE")
     RETURN_NAMES = ("images", "report", "frame_count", "fps", "source_images")
     FUNCTION = "run"
     CATEGORY = "Bernini/Long Video"
-    DESCRIPTION = "Sequential native Bernini V2V windows with endpoint-inclusive 4n+1 output. frame_count matches images and source_images. source_images provides the trimmed/tail-padded source at its original resolution for comparison. fps passes through without resampling; set the loader to the same fps."
+    DESCRIPTION = "Bernini V2V with 4n+1 output. Connect loader video_info to resample source timing to output fps without slow motion. source_images is the same resampled/trimmed source used for rendering, at original resolution. Without metadata or input_fps, input is assumed to already match fps."
 
     def run(self, model_high, model_low, positive, negative, vae, source_video, sampler,
             sigmas_high, sigmas_low, width, height, fps, max_seconds, chunk_frames,
             overlap, blend_mode, seed, seed_mode, cfg_high, cfg_low, tiled_encode,
-            tiled_decode, tile_size, ref_max_size, reference_images=None, resolution="custom"):
+            tiled_decode, tile_size, ref_max_size, reference_images=None, resolution="custom",
+            video_info=None, input_fps=0):
         # Imports here keep the standalone prompt enhancer usable without Bernini core support.
         try:
             from comfy_extras.nodes_bernini import BerniniConditioning
@@ -148,17 +151,23 @@ class BerniniLongV2V:
 
         geometry = output_geometry(int(source_video.shape[2]), int(source_video.shape[1]), resolution, width, height)
         width, height = geometry.model_width, geometry.model_height
-        total = target_frames(len(source_video), fps, max_seconds)
+        loaded_fps, fps_origin = input_frame_rate(video_info, input_fps, fps)
+        indices, resampled_frames, tail_padding = source_frame_indices(len(source_video), loaded_fps, fps, max_seconds)
+        total = len(indices)
+        if fps_origin == 'assumed_from_output_fps':
+            log.warning("Bernini: FPS input tidak diketahui; diasumsikan %s. Hubungkan video_info atau isi input_fps untuk mencegah perubahan kecepatan.", fps)
         windows = plan_windows(total, chunk_frames, overlap)
         if len(sigmas_high) < 2 or len(sigmas_low) < 2:
             raise ValueError("Masing-masing tahap high/low harus memiliki minimal satu langkah sampling.")
         if not torch.isclose(sigmas_high[-1], sigmas_low[0]).item() or sigmas_low[-1].item() != 0:
             raise ValueError("Sigma high/low harus bersambung dan tahap low harus berakhir di 0. Gunakan SplitSigmas.")
-        source = source_video[:total, :, :, :3].detach().cpu().numpy()
-        source_frames_used = len(source)
-        tail_padding = total - source_frames_used
-        if tail_padding:
-            source = np.concatenate((source, np.repeat(source[-1:], tail_padding, axis=0)))
+        source_frames_used = int(indices[-1]) + 1
+        source = source_video[:source_frames_used, :, :, :3].detach().cpu().numpy()
+        if loaded_fps == fps:
+            if tail_padding:
+                source = np.concatenate((source, np.repeat(source[-1:], tail_padding, axis=0)))
+        else:
+            source = source[indices]
         refs = {"reference_image_0": reference_images} if reference_images is not None else None
         encoder = TiledEncodeVAE(vae, tile_size) if tiled_encode else vae
         progress = comfy.utils.ProgressBar(len(windows))
@@ -195,6 +204,11 @@ class BerniniLongV2V:
         frame_count = len(output)
         report = {"frames": frame_count, "fps": float(fps), "seconds": frame_count / fps, "chunks": len(windows),
                   "input_frames": len(source_video), "max_seconds": max_seconds,
+                  "input_fps": loaded_fps, "input_fps_origin": fps_origin,
+                  "input_duration_seconds": len(source_video) / loaded_fps,
+                  "resampled": loaded_fps != fps, "resampled_frames": resampled_frames,
+                  "timing_warning": ("Input FPS assumed; connect loader video_info or set input_fps to verify playback speed."
+                                     if fps_origin == 'assumed_from_output_fps' else None),
                   "source_frames_used": source_frames_used, "tail_padding_frames": tail_padding,
                   "frame_span_seconds": (frame_count - 1) / fps,
                   "resolution": resolution,
