@@ -24,7 +24,7 @@ class BerniniPromptEnhancerVLLM:
             "base_url": ("STRING", {"default": "http://127.0.0.1:8000/v1"}),
             "model": ("STRING", {"default": "auto"}),
             "api_key_env": ("STRING", {"default": "VLLM_API_KEY"}),
-            "sample_frames": ("INT", {"default": 0, "min": 0, "max": 8}),
+            "sample_frames": ("INT", {"default": 0, "min": 0, "max": 8, "tooltip": "Number of source frames. Set 1 for one source image + one connected reference image. 0 omits source frames; a connected reference is still sent in vision mode."}),
             "temperature": ("FLOAT", {"default": 0.2, "min": 0, "max": 2}),
             "max_tokens": ("INT", {"default": 512, "min": 64, "max": 4096}),
             "timeout": ("INT", {"default": 90, "min": 5, "max": 600}),
@@ -33,17 +33,19 @@ class BerniniPromptEnhancerVLLM:
             "mmproj": (projectors, {"default": MMPROJ_AUTO}),
             "context_size": ("INT", {"default": 8192, "min": 1024, "max": 131072, "step": 1024}),
             "unload_llm_after": ("BOOLEAN", {"default": True}),
+            "reference_images": ("IMAGE", {"tooltip": "Optional appearance reference, e.g. Qwen Image Edit output. Sends the first image of the batch. Also connect that image to Bernini Long V2V reference_images."}),
         }}
 
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("enhanced_prompt",)
     FUNCTION = "run"
     CATEGORY = "Bernini/Long Video"
-    DESCRIPTION = "Prompt enhancer with local GGUF discovery or vLLM model auto-detection. sample_frames > 0 sends sampled images to the selected server."
+    DESCRIPTION = "Prompt enhancer with separately labeled source frames and one appearance reference. Set sample_frames=1 and connect reference_images for a two-image request. Requires a vision-capable model and, for local GGUF, its mmproj."
 
     def run(self, instruction, enabled, scene_description, base_url, model, api_key_env,
             sample_frames, temperature, max_tokens, timeout, source_frames=None,
-            llm_model=SERVER_DEFAULT, mmproj=MMPROJ_AUTO, context_size=8192, unload_llm_after=True):
+            llm_model=SERVER_DEFAULT, mmproj=MMPROJ_AUTO, context_size=8192, unload_llm_after=True,
+            reference_images=None):
         if not enabled:
             return (instruction,)
         if not instruction.strip():
@@ -54,7 +56,8 @@ class BerniniPromptEnhancerVLLM:
             local_model, projector = resolve(llm_model, mmproj, config)
             if mmproj == MMPROJ_NONE:
                 sample_frames = 0
-            elif sample_frames and source_frames is not None and not projector:
+                reference_images = None
+            elif ((sample_frames and source_frames is not None) or reference_images is not None) and not projector:
                 raise ValueError("mmproj pasangan model tidak ditemukan atau ambigu. Pilih mmproj secara manual, atau none (text only).")
         frames = None
         if sample_frames and source_frames is not None:
@@ -63,6 +66,12 @@ class BerniniPromptEnhancerVLLM:
             # Copy only requested frames from GPU, not the entire video.
             indices = np.linspace(0, len(source_frames) - 1, min(sample_frames, len(source_frames)), dtype=int).tolist()
             frames = source_frames[indices].detach().cpu().numpy()
+        references = None
+        if reference_images is not None:
+            if len(reference_images) == 0:
+                raise ValueError("Gambar referensi untuk enhancer kosong.")
+            # The first reference only; do not copy a full image batch to CPU.
+            references = reference_images[:1].detach().cpu().numpy()
         if local_model:
             import comfy.model_management as mm
             mm.throw_exception_if_processing_interrupted()
@@ -72,9 +81,11 @@ class BerniniPromptEnhancerVLLM:
             with local_server(local_model, projector, context_size, config, unload_llm_after,
                               mm.throw_exception_if_processing_interrupted) as local_url:
                 return (enhance(instruction, scene_description, local_url, "bernini-local", "",
-                                temperature, max_tokens, timeout, frames, sample_frames),)
+                                temperature, max_tokens, timeout, frames, sample_frames,
+                                reference_images=references),)
         return (enhance(instruction, scene_description, base_url, model, api_key_env,
-                        temperature, max_tokens, timeout, frames, sample_frames),)
+                        temperature, max_tokens, timeout, frames, sample_frames,
+                        reference_images=references),)
 
 
 class TiledEncodeVAE:

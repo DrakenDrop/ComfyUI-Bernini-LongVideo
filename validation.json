@@ -1,6 +1,6 @@
 {
   "date": "2026-10-05",
-  "cpu_unit_tests": 57,
+  "cpu_unit_tests": 66,
   "result": "passed",
   "upstream_api_signature_checks": "passed",
   "comfyui_source_commit": "5c460d8172fe30761ff67c0df3d5643bb74e0d70",
@@ -16,7 +16,8 @@
     "llama-server discovery using MiniMaxH3 configuration, common folders, quoted paths, and directory layouts",
     "Exact-ratio resolution presets, float resize, spatial pad/unpad and cancellation",
     "Node conditioning/decode resolution wiring with CPU inference doubles",
-    "Automatic port fallback with a real occupied localhost socket and managed-process reuse on the selected port"
+    "Automatic port fallback with a real occupied localhost socket and managed-process reuse on the selected port",
+    "Separately labeled source/reference vision payloads, node selection and projector checks; two-image transport against a real localhost HTTP fixture"
   ],
   "not_tested": [
     "GPU Bernini inference",

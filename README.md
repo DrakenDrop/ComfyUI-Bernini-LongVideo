@@ -10,6 +10,7 @@ Custom nodes ComfyUI untuk mengedit video panjang dengan **Bernini-R** melalui p
 - Preset resolusi 360p/480p/720p/1080p dengan resize dan rasio input persis.
 - Opsi tiled VAE untuk mengatur penggunaan memori.
 - Prompt enhancer berbasis teks atau cuplikan gambar melalui server vLLM atau llama.cpp lokal.
+- Prompter menerima frame sumber dan satu gambar referensi dengan peran visual terpisah.
 - Auto-detect GGUF dari `models/LLM`, dropdown model dan `mmproj`, serta deteksi served model melalui `/v1/models`.
 - Contoh workflow fast dan quality.
 
@@ -131,7 +132,7 @@ Pola pemilihan model mengikuti [ComfyUI-MiniMaxH3-Prompter](https://github.com/D
 1. Letakkan model instruct GGUF di `ComfyUI/models/LLM/`. Untuk vision, letakkan `mmproj` yang cocok dari distribusi model yang sama. Model harus didukung oleh build llama.cpp yang dipakai.
 2. Node mencari `llama-server` secara otomatis. Jika MiniMaxH3 Prompter sudah terpasang pada ComfyUI yang sama, lokasi executable dari `config.json` dan folder `llama.cpp` miliknya ikut diperiksa. Tidak perlu konfigurasi tambahan jika ditemukan. Jika belum tersedia, pasang [llama.cpp](https://github.com/ggml-org/llama.cpp/releases) dengan backend GPU yang sesuai. Untuk lokasi khusus, salin `bernini_config.example.json` menjadi `bernini_config.json` dan isi `llama_server_path` dengan path file atau folder, misalnya `"C:/llama.cpp"`.
 3. Restart ComfyUI dan refresh halaman. Pilih file pada dropdown `llm_model`, lalu aktifkan `enabled`. Setelah menambahkan file, refresh daftar node/model melalui frontend atau reload halaman untuk mengambil daftar terbaru.
-4. `mmproj=auto` mencocokkan nama keluarga model setelah menghapus penanda kuantisasi. File generik seperti `mmproj-F16.gguf` dipilih hanya bila folder itu berisi satu keluarga model dan satu projector generik. Bila pasangan tidak jelas, pilih secara manual. Untuk teks saja gunakan `none (text only)` atau `sample_frames=0`.
+4. `mmproj=auto` mencocokkan nama keluarga model setelah menghapus penanda kuantisasi. File generik seperti `mmproj-F16.gguf` dipilih hanya bila folder itu berisi satu keluarga model dan satu projector generik. Bila pasangan tidak jelas, pilih secara manual. Untuk teks saja gunakan `none (text only)`; pilihan ini mengabaikan kedua input gambar. Alternatifnya, set `sample_frames=0` dan jangan sambungkan `reference_images`.
 5. `context_size=8192` adalah nilai awal untuk teks dan gambar; sesuaikan dengan model. `unload_llm_after=true` menutup proses lokal milik node setelah prompt selesai sehingga VRAM dilepas sebelum Bernini berjalan.
 
 Node menjalankan llama-server di localhost, dengan port pilihan **8091**. Jika port itu sedang dipakai, node otomatis memilih port kosong dan menulis port aktual ke log. Set `managed_port=0` untuk selalu memilih port otomatis, dan melepas model ComfyUI yang sedang berada di GPU sebelum loading LLM lokal. `base_url`, `model`, dan `api_key_env` hanya dipakai pada mode server. Pada mode lokal, node memakai alias internal tanpa mengirim API key server lain. Dengan `unload_llm_after=false`, model lokal tetap memakai VRAM; proses yang sama digunakan lagi jika konfigurasi sama. Error dan pembatalan saat startup tetap membersihkan proses milik node. Pembatalan saat request HTTP menunggu respons/timeout; atur `timeout` sesuai kebutuhan.
@@ -150,13 +151,30 @@ Default `enabled=false`: instruksi diteruskan langsung ke CLIP, sehingga workflo
 
 - `base_url`: alamat server yang dapat diakses **dari proses ComfyUI**, default `http://127.0.0.1:8000/v1`.
 - `model=auto` (atau kosong): deteksi nama model melalui `GET /v1/models`. Jika server menyediakan beberapa model, node menampilkan nama yang tersedia dan meminta pilihan pada field `model`. Nama eksplisit seperti `bernini-enhancer` tetap didukung dan melewati discovery. Deteksi nama tidak membuktikan dukungan vision; gunakan model VLM untuk gambar.
-- `sample_frames=0`: hanya teks dan scene_description.
-- `sample_frames=4`: kirim empat frame kronologis yang tersebar di batch input; gunakan model vision dengan limit minimal empat gambar. Gambar diperkecil maksimal sisi 512 px. Ini bukan analisis gerakan per frame.
+- `sample_frames=0`: tidak mengirim frame sumber. Jika `reference_images` tersambung, satu gambar referensi tetap dikirim; lepas referensi juga untuk request teks saja.
+- `sample_frames=4`: kirim empat frame kronologis yang tersebar di batch input; jika referensi tersambung, total menjadi lima gambar. Gambar diperkecil maksimal sisi 512 px. Ini bukan analisis gerakan per frame.
 - `api_key_env`: nama environment variable, default `VLLM_API_KEY`. Isi secret di environment proses ComfyUI, bukan di workflow JSON.
 
 Saat aktif, prompt dan frame yang dipilih dikirim ke server sesuai base_url. Tidak ada request jaringan saat enhancer dimatikan. Bila server bermasalah, node menampilkan error; tidak diam-diam mengganti prompt. Anda dapat menyalin prompt hasil ke input instruksi lalu mematikan enhancer agar render berikutnya tidak membutuhkan server. Hubungkan keluaran string ke node penampil teks yang tersedia bila ingin meninjaunya dahulu.
 
-System prompt meminta instruksi edit bahasa Inggris yang ringkas, mempertahankan intent, gerakan, timing, kamera, dan bagian sumber yang tidak diminta berubah. Enhancer tidak melatih Bernini dan tidak menggantikan semantic planner latent milik Bernini penuh.
+System prompt meminta instruksi edit bahasa Inggris yang ringkas, mempertahankan intent, gerakan, timing, kamera, dan bagian sumber yang tidak diminta berubah. Gambar sumber diberi label SOURCE FRAMES; referensi diberi label REFERENCE IMAGE. Referensi pakaian tidak dianggap sebagai frame berikutnya atau perintah untuk menyalin wajah, pose, dan latarnya. Enhancer tidak melatih Bernini dan tidak menggantikan semantic planner latent milik Bernini penuh.
+
+## Dua gambar: source video + referensi Qwen Image 2.1
+
+**Bernini · Prompt Enhancer** memiliki input `source_frames` dan `reference_images`. Set `enabled=true`, `sample_frames=1`, sambungkan video asli ke `source_frames` dan gambar hasil edit ke `reference_images`. Request berisi tepat dua gambar jika kedua input tersedia. Satu sampel sumber berarti frame pertama; untuk memilih frame lain, gunakan ImageFromBatch sebelum prompter. Referensi selalu memakai gambar pertama dari batch, terpisah dari batas `sample_frames` (maksimal 8 sumber + 1 referensi).
+
+Gunakan **model vision/VLM** pada prompter. GGUF lokal memerlukan mmproj yang cocok; server vLLM perlu mendukung total gambar yang dikirim (`--limit-mm-per-prompt '{"image":2,"video":0}'` cukup untuk 1+1). Model Qwen Image 2.1 diffusion membuat gambar referensi; model tersebut bukan model chat yang dipilih pada `llm_model` atau endpoint prompter ini.
+
+Alur untuk mengganti pakaian:
+
+1. Ambil satu frame sumber dan edit pakaian memakai [workflow resmi Qwen Image 2.1 Image Edit](https://github.com/Comfy-Org/workflow_templates/blob/main/templates/image_qwen_image_2_1_image_edit.json). Model dan penempatan file tersedia di [Comfy-Org/Qwen-Image-2.1](https://huggingface.co/Comfy-Org/Qwen-Image-2.1).
+2. Hubungkan output gambar hasil Qwen ke **dua input**: `reference_images` pada Prompt Enhancer dan `reference_images` pada Long V2V. Jika dikerjakan terpisah, simpan hasil Qwen lalu baca dengan Load Image. Pada satu graph, gunakan output IMAGE sesudah VAE Decode Qwen.
+3. Video asli tetap masuk ke `source_video` Long V2V dan `source_frames` prompter. `enhanced_prompt` masuk ke CLIP Text Encode positif Bernini. Jangan memakai output Long V2V sebagai input prompter yang mengendalikan Long V2V itu sendiri karena membuat siklus.
+4. Isi instruksi, misalnya: `Replace the woman's clothing with the garment shown in the reference image. Preserve her identity, pose, body proportions, original motion, camera, and background. Change only the clothing.`
+
+Contoh `workflows/bernini_30s_reference.json` sudah menghubungkan satu **Load Image** ke kedua input referensi, memakai `sample_frames=1`, dan mengaktifkan prompter. Pilih video, gambar hasil Qwen, serta model vision/server Anda sebelum menjalankan. Workflow contoh ini menerima hasil Qwen yang sudah disimpan; tidak menyertakan sampler Qwen. Referensi yang sama diteruskan Bernini ke setiap window. Ketepatan pakaian dan konsistensi wajah/gerakan tetap harus dinilai dari hasil render; belum ada uji GPU gabungan Qwen/Bernini.
+
+Setelah update, restart ComfyUI dan refresh halaman. Jika soket baru belum terlihat pada node lama, tambahkan ulang node Prompt Enhancer.
 
 Contoh setup **Linux/WSL2**, di environment terpisah, memakai Qwen2.5-VL-7B-Instruct yang didokumentasikan vLLM. Contoh konfigurasi single GPU:
 
