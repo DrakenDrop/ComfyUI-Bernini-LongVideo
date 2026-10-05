@@ -115,11 +115,11 @@ class BerniniLongV2V:
             "resolution": (RESOLUTIONS, {"default": "480p", "tooltip": "Target short edge; uses the nearest even dimensions with the EXACT input ratio. 16:9: 480p = 864x486, 720p = 1280x720. Padding is removed after rendering. custom keeps the legacy width/height behavior."}),
         }}
 
-    RETURN_TYPES = ("IMAGE", "STRING")
-    RETURN_NAMES = ("images", "report")
+    RETURN_TYPES = ("IMAGE", "STRING", "INT", "FLOAT")
+    RETURN_NAMES = ("images", "report", "frame_count", "fps")
     FUNCTION = "run"
     CATEGORY = "Bernini/Long Video"
-    DESCRIPTION = "Sequential native Bernini V2V windows. Set the video loader and saver to the same fps. Overlap blending is not a temporal consistency guarantee."
+    DESCRIPTION = "Sequential native Bernini V2V windows. frame_count is the actual output length; fps passes through the input rate without resampling. Use them to trim comparison frames and set Video Combine frame_rate. Set the loader to the same fps."
 
     def run(self, model_high, model_low, positive, negative, vae, source_video, sampler,
             sigmas_high, sigmas_low, width, height, fps, max_seconds, chunk_frames,
@@ -177,7 +177,9 @@ class BerniniLongV2V:
 
         output, windows = render_timeline(source, total, chunk_frames, overlap, blend_mode, render,
                                          lambda done, count: progress.update_absolute(done, count))
-        report = {"frames": total, "fps": fps, "seconds": total / fps, "chunks": len(windows),
+        frame_count = len(output)
+        report = {"frames": frame_count, "fps": float(fps), "seconds": frame_count / fps, "chunks": len(windows),
+                  "input_frames": len(source_video), "max_seconds": max_seconds,
                   "resolution": resolution,
                   "input_size": [int(source_video.shape[2]), int(source_video.shape[1])],
                   "output_size": [geometry.width, geometry.height],
@@ -188,7 +190,7 @@ class BerniniLongV2V:
                   "windows": [{"start": w.start, "end_exclusive": w.end, "sampled_frames": w.padded} for w in windows],
                   "blend": blend_mode, "output_ram_gib": output.nbytes / 1024 ** 3,
                   "note": "Independent sampling windows + pixel overlap. No latent continuity lock; inspect seams and identity drift."}
-        return (torch.from_numpy(output), json.dumps(report, indent=2))
+        return (torch.from_numpy(output), json.dumps(report, indent=2), frame_count, float(fps))
 
 
 NODE_CLASS_MAPPINGS = {"BerniniLongV2V": BerniniLongV2V,

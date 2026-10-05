@@ -55,6 +55,22 @@ Mulai dengan `max_seconds=6`: ini menguji dua window dan satu sambungan. Setelah
 
 `crossfade` membaurkan frame yang waktunya sama pada overlap. `cut` memilih bagian awal dari window lama dan bagian akhir dari window baru. Keduanya mempertahankan jumlah frame, tetapi **bukan temporal attention bersama**, bukan optical flow, dan bukan penguncian latent. Crossfade bisa menimbulkan ghosting; cut bisa menampilkan lompatan detail. Seed sama tidak menjamin noise global yang selaras. Tidak ada automatic scene-cut detection; untuk video dengan pergantian shot, proses tiap shot terpisah. Referensi gambar opsional dikirim sebagai referensi native yang sama pada setiap window; efeknya bergantung pada prompt dan model.
 
+## Frame count, FPS, dan video pembanding
+
+Output **Bernini · Long V2V**: `images`, `report`, `frame_count` (INT), dan `fps` (FLOAT). Dua output lama tetap pada posisi yang sama. `frame_count` adalah jumlah frame hasil sesudah padding dibuang dan overlap disatukan. `fps` meneruskan nilai input node, bukan mendeteksi FPS dari tensor IMAGE atau melakukan resampling.
+
+Jumlah output = `min(frame input yang masuk, max(1, floor(fps × max_seconds + 0.5)))`. Jika `max_seconds=0`, seluruh frame input diproses. Pada 16 FPS: 5 detik = 80 frame, 10 detik = 160 frame, 30 detik = 480 frame, asalkan input cukup panjang. `chunk_frames=81` membatasi panjang window model, bukan durasi video akhir. Input 80 frame dipad sementara menjadi 81 untuk model, lalu kembali menjadi 80 frame output. Overlap tidak mengurangi jumlah frame akhir.
+
+Untuk mencari penyebab video terlalu pendek, lihat `input_frames`, `max_seconds`, `frames`, dan `fps` pada `report`. Periksa juga batas frame loader, `select_every_nth`, skip frame, node pemotong batch, dan durasi sumber. FPS Long V2V harus sama dengan FPS frame yang dimuat loader.
+
+Untuk perbandingan menggunakan Image Concatenate:
+
+1. Cabangkan batch sumber yang **sama dengan input `source_video`** ke node **ImageFromBatch**. Gunakan `batch_index=0`, lalu ubah widget `length` menjadi input dan sambungkan `frame_count` dari Long V2V. Jangan menghubungkannya kembali ke loader yang memasok Long V2V karena membuat siklus graph.
+2. Hubungkan hasil ImageFromBatch dan `images` hasil Bernini ke Image Concatenate. Aktifkan `match_image_size=true` jika tersedia untuk menyamakan ukuran tampilannya.
+3. Hubungkan `fps` Long V2V ke input `frame_rate` Video Combine pembanding dan Video Combine hasil edit. Ubah widget menjadi input jika belum ada soketnya.
+
+Update paket, restart ComfyUI, lalu refresh halaman. Jika node lama belum menampilkan output baru, tambahkan ulang **Bernini · Long V2V** dan sambungkan kembali. Contoh workflow sudah menghubungkan output FPS ke Video Combine.
+
 ## Resolusi dan rasio video
 
 Pilih `resolution` pada **Bernini · Long V2V**: `360p`, `480p`, `720p`, `1080p`, `source`, atau `custom`. Preset p menargetkan **sisi pendek** sehingga cocok untuk landscape, portrait, dan square. `width`/`height` hanya dipakai pada mode `custom`; pada preset p keduanya diabaikan.
