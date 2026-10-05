@@ -75,9 +75,32 @@ class EnhancerTests(unittest.TestCase):
 
     @patch('enhancer.build_opener')
     def test_invalid_input_does_not_send(self,opener):
-        with self.assertRaises(ValueError): self.call(model='')
         with self.assertRaises(ValueError): self.call(instruction='')
         opener.assert_not_called()
+
+    @patch('enhancer.build_opener')
+    def test_auto_model_get_then_post(self, opener):
+        for model in ('auto', '', ' AUTO '):
+            opener.reset_mock()
+            opener.return_value.open.side_effect = [
+                self.response({'data': [{'id': 'served-name'}, {'id': 'served-name'}]}),
+                self.response({'choices': [{'message': {'content': 'Blue shirt.'}}]})]
+            with patch.dict(os.environ, {'TEST_VLLM_KEY': 'secret'}):
+                self.assertEqual(self.call(model=model), 'Blue shirt.')
+            discovery, completion = [call.args[0] for call in opener.return_value.open.call_args_list]
+            self.assertEqual(discovery.get_method(), 'GET')
+            self.assertEqual(discovery.full_url, 'http://localhost:8000/v1/models')
+            self.assertEqual(discovery.headers['Authorization'], 'Bearer secret')
+            self.assertEqual(json.loads(completion.data)['model'], 'served-name')
+
+    @patch('enhancer.build_opener')
+    def test_auto_model_rejects_empty_ambiguous_and_invalid_lists(self, opener):
+        for data in ({}, [], {'data': []}, {'data': [{'id': 1}]},
+                     {'data': [{'id': 'one'}, {'id': 'two'}]}):
+            opener.reset_mock()
+            opener.return_value.open.return_value = self.response(data)
+            with self.assertRaises(RuntimeError): self.call(model='auto')
+            self.assertEqual(opener.return_value.open.call_count, 1)
 
 
 if __name__=='__main__': unittest.main()

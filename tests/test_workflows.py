@@ -45,6 +45,10 @@ class WorkflowTests(unittest.TestCase):
         module=importlib.util.module_from_spec(spec)
         with patch.dict(sys.modules,{'bernini_test_package':package,'torch':types.ModuleType('torch')}):
             spec.loader.exec_module(module)
+        # Original workflows can still call the node without the new optional widgets.
+        with patch.object(module, 'load_config', side_effect=AssertionError('disabled node read config')):
+            self.assertEqual(module.BerniniPromptEnhancerVLLM().run(
+                'Original prompt', False, '', '', '', '', 0, 0.2, 512, 90), ('Original prompt',))
         scalar={'STRING','INT','FLOAT','BOOLEAN'}
         for path in (ROOT/'workflows').glob('*.json'):
             data=json.loads(path.read_text(encoding='utf-8'))
@@ -52,10 +56,10 @@ class WorkflowTests(unittest.TestCase):
                 if node['type'] not in module.NODE_CLASS_MAPPINGS: continue
                 schema=module.NODE_CLASS_MAPPINGS[node['type']].INPUT_TYPES()
                 widgets=[]
-                for name, value in schema['required'].items():
+                for name, value in {**schema['required'], **schema.get('optional', {})}.items():
                     if isinstance(value[0],list) or value[0] in scalar:
                         widgets.append((name,value))
-                    else:
+                    elif name in schema['required']:
                         self.assertIsNotNone(next(i['link'] for i in node['inputs'] if i['name']==name))
                 self.assertEqual(len(node['widgets_values']),len(widgets))
                 for (name,spec),value in zip(widgets,node['widgets_values']):
