@@ -88,5 +88,29 @@ class WorkflowTests(unittest.TestCase):
         for path in ROOT.rglob('*.py'):
             compile(path.read_text(encoding='utf-8'),str(path),'exec')
 
+    def test_13b_workflow_uses_one_shifted_model_and_complete_schedule(self):
+        data = json.loads((ROOT/'workflows/bernini_1_3b_30s_reference.json').read_text(encoding='utf-8'))
+        nodes = {n['id']: n for n in data['nodes']}
+        links = {l[0]: l for l in data['links']}
+        def upstream(node, socket):
+            link = next(i['link'] for i in nodes[node]['inputs'] if i['name'] == socket)
+            return links[link][1:3]
+        self.assertEqual(nodes[14]['type'], 'BerniniLongV2V13B')
+        names = {i['name'] for i in nodes[14]['inputs']}
+        self.assertTrue({'model', 'sigmas'} <= names)
+        self.assertFalse({'model_high', 'model_low', 'sigmas_high', 'sigmas_low'} & names)
+        self.assertEqual(sum(n['type'] == 'UNETLoader' for n in nodes.values()), 1)
+        self.assertFalse(any(n['type'] in ('SplitSigmas', 'LoraLoaderModelOnly') for n in nodes.values()))
+        self.assertEqual(nodes[1]['widgets_values'][0], 'wan2.1_bernini_1.3B_fp16.safetensors')
+        self.assertEqual(upstream(18, 'model'), [1, 0])
+        self.assertEqual(upstream(14, 'model'), upstream(11, 'model'))
+        self.assertEqual(upstream(14, 'model'), [18, 0])
+        self.assertEqual(nodes[18]['widgets_values'], [3.0])
+        self.assertEqual(upstream(14, 'sigmas'), [11, 0])
+        self.assertEqual(nodes[11]['widgets_values'], ['simple', 40, 1.0])
+        self.assertEqual(nodes[13]['widgets_values'], ['uni_pc'])
+        self.assertEqual(upstream(14, 'reference_images'), upstream(8, 'reference_images'))
+        self.assertFalse(nodes[8]['widgets_values'][1])
+
 
 if __name__=='__main__': unittest.main()
